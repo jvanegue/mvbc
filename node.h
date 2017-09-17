@@ -1,6 +1,7 @@
 #include <iostream>
 #include <list>
 #include <map>
+#include <stack>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -36,12 +37,26 @@ typedef struct __attribute__((packed, aligned(1))) blockmsg
   unsigned char		mineraddr[32];
 }			blockmsg_t;
 
+typedef struct		block
+{
+  blockmsg_t		hdr;
+  transmsg_t		*trans;
+}			block_t;
+
 typedef struct		worker
 {
   int			serv_sock;
   unsigned short	serv_port;
   std::list<int>	clients;
 }			worker_t;
+
+typedef struct		miner
+{
+  pid_t			pid;
+  int			sock;
+  // here add a copy of which block is being mined?
+}			miner_t;
+
 
 typedef struct		remote
 {
@@ -54,19 +69,25 @@ typedef struct		account
   unsigned char		addr[32];
 }			account_t;
 
+
+typedef unsigned long long int ullint;
 typedef unsigned int uint;
 typedef std::map<int, bootmsg_t> bootmap_t;
 typedef std::map<int, remote_t>  clientmap_t;
 typedef std::map<int, worker_t>  workermap_t;
-typedef std::map<account_t, unsigned long long int> UTXO;
-typedef std::list<transmsg_t>	 mempool;
+typedef std::map<account_t, ullint> UTXO;
+typedef std::list<transmsg_t>	 mempool_t;
+typedef std::stack<block_t>	 blockchain_t;
+
 
 // Defined
-#define OPCODE_SENDTRANSACTIONS 0
+#define OPCODE_SENDTRANS	0
 #define OPCODE_SENDBLOCK	1
 #define OPCODE_GETBLOCK		2
 #define OPCODE_GETHASH		3
 #define OPCODE_SENDPORTS	4
+
+#define DEFAULT_TRANS_PER_BLOCK	50000
 
 // Macros
 #define FATAL(str) do { perror(str); exit(-1); } while (0)

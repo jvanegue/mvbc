@@ -42,6 +42,8 @@ static int reset_readset(int boot_sock, fd_set *readset)
 static int	bootnode_update(int boot_sock)
 {
 
+  // Check if all workers indicated by the boot node are already known - if not, add them
+  
   return (0);
 }
 
@@ -50,10 +52,18 @@ static int	worker_update(int port)
 {
   worker_t	worker = workermap[port];
 
-  // do something
+  // Either kill the worker if the socket closed, or add a worker client to the list
   
   return (0);
 }
+
+// Treat events on the miner unix socket (new block mined?)
+static int	miner_update(int sock)
+{
+
+  return (0);
+}
+
 
 
 // Treat traffic from existing worker's clients
@@ -61,9 +71,56 @@ static int	worker_update(int port)
 static int	client_update(int port, int client_sock)
 {
   worker_t	worker = workermap[port];
+  char		blockheight[32];
+  unsigned char opcode;
 
-  // do something
+  int len = read(client_sock, &opcode, 1);
+  if (len != 1)
+    FATAL("read");
 
+  switch (opcode)
+    {
+    case OPCODE_SENDTRANS:
+      std::cerr << "SENDTRANS OPCODE " << std::endl;
+
+      // Verify transaction
+      // Add transaction in mempool
+      // If mempool is full, launch miner (fork) - the miner shares a unix socket and is added to the readset
+      
+      break;
+    case OPCODE_SENDBLOCK:
+      std::cerr << "SENDBLOCK OPCODE " << std::endl;
+
+      // If new block is the same height as block being mined, kill miner(s) and close their sockets
+      // If new block is height is greater, use GET_BLOCK/GET_HASH to synchronize local chain
+      
+      break;
+    case OPCODE_GETBLOCK:
+      std::cerr << "GETBLOCK OPCODE " << std::endl;
+
+      len = read(client_sock, blockheight, sizeof(blockheight));
+      if (len != sizeof(blockheight))
+	FATAL("Not enough bytes in GETBLOCK message");
+
+      // send content of that block if it exists
+      
+      break;
+    case OPCODE_GETHASH:
+      std::cerr << "GETHASH OPCODE " << std::endl;
+
+      len = read(client_sock, blockheight, sizeof(blockheight));
+      if (len != sizeof(blockheight))
+	FATAL("Not enough bytes in GETBLOCK message");
+
+      // send back the hash of that block if it exists
+      
+      break;
+    default:
+      std::cerr << "INVALID OPCODE " << opcode << std::endl;
+      return (0);
+      break;
+    }
+  
   return (0);
 }
 
