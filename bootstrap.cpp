@@ -94,7 +94,7 @@ void			execute_bootstrap()
 
       // Advertize the new node(s) to everyone
       int len = 0;
-      char *reply = build_sendport(portmap, &len);
+      char *reply = pack_sendport(portmap, &len);
       for (bootmap_t::iterator it = portmap.begin(); it != portmap.end(); it++)
 	{
 	  int dstsock = it->first;

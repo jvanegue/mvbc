@@ -1,10 +1,10 @@
 #include "node.h"
 
 // Build a SEND_PORT message
-char		*build_sendport(bootmap_t portmap, int *len)
+char		*pack_sendport(bootmap_t portmap, int *len)
 {
   unsigned short mapsize = portmap.size();
-  int		 totlen = 1 + 6 + mapsize * 6;
+  unsigned int	 totlen = 1 + 6 + mapsize * 6;
   char		 *reply = (char *) malloc(totlen);
   int            off = 0;
   
@@ -24,4 +24,24 @@ char		*build_sendport(bootmap_t portmap, int *len)
   
   fprintf(stderr, "SEND_PORT = %s \n", reply + 1);
   return (reply);
+}
+
+
+// Build the boot msg from workers to bootstrap node
+void		pack_bootmsg(unsigned short port, bootmsg_t *msg)
+{
+  snprintf((char *) msg->port, sizeof(msg->port), "%06u", port);
+  sha256((unsigned char *) "jfv47", 5, msg.addr);
+}
+
+char		*unpack_sendblock(char *buf, int len)
+{
+  return (NULL);
+}
+
+
+// Build a SEND_TRANSACTION message
+char		*unpack_sendtransaction(char *buf, int len)
+{
+  return (NULL);
 }

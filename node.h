@@ -19,16 +19,47 @@ typedef struct __attribute__((packed, aligned(1))) bootmsg
   unsigned char		addr[32];
 }			bootmsg_t;
 
-typedef struct		client
+typedef struct __attribute__((packed, aligned(1))) transmsg
+{
+  unsigned char		sender[32];
+  unsigned char		receiver[32];
+  unsigned char		amount[32];
+  unsigned char		timestamp[32];
+}			transmsg_t;
+
+typedef struct __attribute__((packed, aligned(1))) blockmsg
+{
+  unsigned char		nonce[32];
+  unsigned char		priorhash[32];
+  unsigned char		hash[32];
+  unsigned char		height[32];
+  unsigned char		mineraddr[32];
+}			blockmsg_t;
+
+typedef struct		worker
 {
   int			serv_sock;
   unsigned short	serv_port;
-  int		        boot_sock;
-}			client_t;
+  std::list<int>	clients;
+}			worker_t;
+
+typedef struct		remote
+{
+  int			client_sock;
+  unsigned short	remote_port;
+}			remote_t;
+
+typedef struct		account
+{
+  unsigned char		addr[32];
+}			account_t;
 
 typedef unsigned int uint;
 typedef std::map<int, bootmsg_t> bootmap_t;
-typedef std::map<int, client_t> clientmap_t;
+typedef std::map<int, remote_t>  clientmap_t;
+typedef std::map<int, worker_t>  workermap_t;
+typedef std::map<account_t, unsigned long long int> UTXO;
+typedef std::list<transmsg_t>	 mempool;
 
 // Defined
 #define OPCODE_SENDTRANSACTIONS 0
@@ -43,5 +74,9 @@ typedef std::map<int, client_t> clientmap_t;
 // Prototypes
 void execute_bootstrap();
 void execute_worker(int num, std::list<int> ports);
-char *build_sendport(bootmap_t portmap, int *len);
+char *pack_sendport(bootmap_t portmap, int *len);
+void pack_bootmsg(unsigned short port, bootmsg_t *msg);
 int  sha256(unsigned char *buff, unsigned int len, unsigned char *output);
+
+char		*unpack_sendblock(char *buf, int len);
+char		*unpack_sendtransaction(char *buf, int len);
