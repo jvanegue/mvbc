@@ -3,6 +3,7 @@ OBJ = $(SRC:.cpp=.o)
 EXE = node
 CC  = g++
 CFLAGS = -Wall -g3
+CPPFLAGS = -Wall -g3
 LDFLAGS = -lcrypto
 
 all: $(OBJ)

@@ -31,7 +31,7 @@ char		*pack_sendport(bootmap_t portmap, int *len)
 void		pack_bootmsg(unsigned short port, bootmsg_t *msg)
 {
   snprintf((char *) msg->port, sizeof(msg->port), "%06u", port);
-  sha256((unsigned char *) "jfv47", 5, msg.addr);
+  sha256((unsigned char *) "jfv47", 5, msg->addr);
 }
 
 char		*unpack_sendblock(char *buf, int len)
@@ -44,4 +44,23 @@ char		*unpack_sendblock(char *buf, int len)
 char		*unpack_sendtransaction(char *buf, int len)
 {
   return (NULL);
+}
+
+
+// Binary to String hash
+std::string	hash_binary_to_string(unsigned char hash[32])
+{
+  const char *base = "0123456789ABCDEF";	
+  std::ostringstream oss;
+  int		idx;
+  
+  for (idx = 0; idx < 32; idx++)
+    {
+      unsigned char high = (hash[idx] & 0xF0) >> 4;
+      unsigned char low  = (hash[idx] & 0x0F);
+      oss << base[high] << base[low];
+    }
+  
+  std::string key = oss.str();
+  return (key);
 }

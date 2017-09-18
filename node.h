@@ -12,6 +12,9 @@
 #include <errno.h>
 #include <openssl/sha.h>
 #include <arpa/inet.h>
+#include <unistd.h>
+#include <sstream>
+#include <fcntl.h>
 
 // Types
 typedef struct __attribute__((packed, aligned(1))) bootmsg
@@ -62,23 +65,22 @@ typedef struct		remote
 {
   int			client_sock;
   unsigned short	remote_port;
+  char			remote_node_addr[32];
 }			remote_t;
 
-typedef struct		account
+typedef struct		 account
 {
-  unsigned char		addr[32];
-}			account_t;
-
+  unsigned long long int amount;
+}			 account_t;
 
 typedef unsigned long long int ullint;
 typedef unsigned int uint;
 typedef std::map<int, bootmsg_t> bootmap_t;
 typedef std::map<int, remote_t>  clientmap_t;
 typedef std::map<int, worker_t>  workermap_t;
-typedef std::map<account_t, ullint> UTXO;
+typedef std::map<std::string,account_t> UTXO;
 typedef std::list<transmsg_t>	 mempool_t;
 typedef std::stack<block_t>	 blockchain_t;
-
 
 // Defined
 #define OPCODE_SENDTRANS	0
@@ -93,11 +95,11 @@ typedef std::stack<block_t>	 blockchain_t;
 #define FATAL(str) do { perror(str); exit(-1); } while (0)
 
 // Prototypes
-void execute_bootstrap();
-void execute_worker(int num, std::list<int> ports);
-char *pack_sendport(bootmap_t portmap, int *len);
-void pack_bootmsg(unsigned short port, bootmsg_t *msg);
-int  sha256(unsigned char *buff, unsigned int len, unsigned char *output);
-
+void		execute_bootstrap();
+void		execute_worker(unsigned int numtx, int difficulty, int num, std::list<int> ports);
+char		*pack_sendport(bootmap_t portmap, int *len);
+void		pack_bootmsg(unsigned short port, bootmsg_t *msg);
+int		sha256(unsigned char *buff, unsigned int len, unsigned char *output);
 char		*unpack_sendblock(char *buf, int len);
 char		*unpack_sendtransaction(char *buf, int len);
+std::string	hash_binary_to_string(unsigned char hash[32]);
