@@ -64,3 +64,17 @@ std::string	hash_binary_to_string(unsigned char hash[32])
   std::string key = oss.str();
   return (key);
 }
+
+
+void		string_integer_increment(char *buff, int len)
+{
+  
+  for (int index = len - 1; index >= 0; index--)
+    if (buff[index] != '9')
+      {
+	buff[index]++;
+	return;
+      }
+    else
+      buff[index] = '0';
+}

@@ -28,7 +28,11 @@ static int reset_readset(int boot_sock, fd_set *readset)
 	  if (cursock > max)
 	    max = cursock;
 	  FD_SET(cursock, readset);
-	}	  
+	}
+      miner_t miner = it->second.miner;
+      if (miner.sock != 0)
+	FD_SET(miner.sock, readset);
+      
     }
   for (clientmap_t::iterator cit = clientmap.begin(); cit != clientmap.end(); cit++)
     {
@@ -151,18 +155,69 @@ static int		worker_update(int port)
 
 
 // Treat events on the miner unix socket (new block mined?)
-static int	miner_update(int sock)
+static int	miner_update(worker_t& worker, int sock, int numtxinblock)
 {
+  blockmsg_t     newblock;
+  char		*data;
+  int		read;
 
+  // Read mined block from miner
+  int len = recv(sock, (char *) &newblock, sizeof(newblock), 0);
+  if (len != sizeof(newblock))
+    FATAL("Incomplete read in miner update");
+  len = sizeof(transdata_t) * numtxinblock;
+  data = malloc(len);
+  if (data == NULL)
+    FATAL("FAILED malloc in miner update");
+  read = recv(sock, data, len, 0);
+  if (read != len)
+    FATAL("Incomplete read in miner update 2");
+
+  // Send block to all remotes
+  for (clientmap_t::iterator it = clientmap.begin(); it != clientmap.end(); it++)
+    {
+      remote_t	remote = it->second;
+      char	c = OPCODE_SENDBLOCK;
+      int      len = send(remote->client_sock, &c, 1, 0);
+      if (len != 1)
+	FATAL("Failed to send in miner_update");
+      len = send(remote->client_sock, (char *) &newblock, sizeog(newblock), 0);
+      if (len != sizeof(newblock))
+	FATAL("Failed to send in miner_update 2");
+      int sent = send(remote->client_sock, (char *) data, len, 0);
+      if (sent != len)
+	FATAL("Failed to send in miner_update 3");
+    }
+
+  // Update wallets
+  for (int idx = 0; idx < numtxinblock; idx++)
+    {
+      transdata_t *curtrans = (transdata_t *) &data[idx];
+
+      // typedef std::map<std::string,account_t> UTXO;
+      std::string sender_key = hash_binary_to_string(curtrans->sender);
+      std::string receiver_key = hash_binary_to_string(curtrans->receiver);
+
+      
+      
+      
+      
+    }
+  
+  // FIXME:
+  // 3 - update wallets
+  // 4 - remove all transaction from transpool - THIS SHOULD BE DONE ONCE WE LAUCHED IT FOR MINING
+  // 4 - close miner socket and set sock/pid to 0
+  
   return (0);
 }
 
 // Perform the action of mining. Write result on socket when available
 static int	do_mine(char *buff, int len, int difficulty, char *hash)
 {
-  int `		idx;
+  int 		idx;
 
-  sha256((unsigned char*) buff, len, hash);      
+  sha256((unsigned char*) buff, len, (unsigned char *) hash);      
   for (idx = 0; idx < difficulty; idx++)
     {
       char c = hash[31 - idx];
@@ -172,8 +227,9 @@ static int	do_mine(char *buff, int len, int difficulty, char *hash)
   return (0);
 }
 
+
 // Perform the action of mining: 
-static int	do_mine_fork(int difficulty)
+static int	do_mine_fork(worker_t &worker, int difficulty, int numtxinblock)
 {
   int		sock;
   pid_t		pid;
@@ -182,63 +238,126 @@ static int	do_mine_fork(int difficulty)
   if (sock < 0)
     FATAL("Failed to create AF_UNIX for miner");
   pid = fork();
+
+  // Child: start the miner in a different process
   if (!pid)
     {
       unsigned char  hash[32];
-      blockmsg_t     lastblock = chain.top();
-      blockmsg_t	newblock;
+      blockmsg_t     newblock;
       
-      newblock.priorhash = ;
-      newblock.height = ;
-      sha256_mineraddr(newblock.mineraddr)
-      do {
-	// WIP
-	memset("");
-      }
-      while (do_mine(buff, len, difficulty, hash) < 0);
-      
+      if (false == chain.empty())
+	{
+	  block_t      lastblock = chain.top();
+	  blockmsg_t   header    = lastblock.hdr;
+	  memcpy(newblock.priorhash, header.hash, sizeof(newblock.priorhash));
+	  memcpy(newblock.height, header.height, sizeof(newblock.height));
+	  string_integer_increment((char *) newblock.height, sizeof(newblock.height));
+  	}
+      else
+	{
+	  unsigned char	  priorhash[32];
+	  memset(priorhash, '0', sizeof(priorhash));
+	  sha256(priorhash, sizeof(priorhash), newblock.priorhash);
+	  memset(newblock.height, '0', sizeof(newblock.height));
+	}      
+      sha256_mineraddr(newblock.mineraddr);
+
+      char		*buff;
+      blockhash_t	*data;
+      int		len;
+
+      // Prepare for hashing
+      len = sizeof(blockhash_t) + sizeof(transdata_t) * numtxinblock;
+      buff = malloc(len);
+      if (buff == NULL)
+	FATAL("FAILED miner malloc");
+      data = (blockhash_t *) buff;
+      memset(data.nonce, '0', sizeof(data.nonce));
+      data.priorhash = newblock.priorhash;
+      data.height = newblock.height;
+      data.mineraddr = newblock.mineraddr;
+
+      // Copy transaction buffer into block to mine
+      int off = sizeof(blockhash_t);
+      for (mempool_t::iterator it = transpool.begin(); it != transpool.end(); it++)
+	{
+	  transmsg_t cur = *it;
+	  transdata_t curdata = cur.data;
+	  
+	  memcpy(buff + off, &curdata, sizeof(curdata));
+	  off += sizeof(transdata_t);
+	}
+
+      // Mine
+      while (do_mine(buff, len, difficulty, (char *) hash) < 0)
+	string_integer_increment((char *) data.nonce, sizeof(data.nonce));	      
+      memcpy(newblock.hash, hash, sizeof(newblock.hash));
+
+      // Send result on UNIX socket and exit
+      send(sock, (char *) &newblock, sizeof(newblock), 0);
+      send(sock, (char *) buff + sizeof(blockhash_t), len - sizeof(blockhash_t), 0);
+      free(buff);
+      exit(0);
     }
+
+
+  // Parent: add miner in miner map and add miner unix socket to readset
   else
     {
-      
+      miner_t newminer;
+
+      newminer.sock = sock;
+      newminer.pid = pid;
+      worker.miner = newminer;
     }
   
-  
-  // Launch miner (fork). Miner has UNIX socket that is added to the readset    
-
+  // Return to main select loop
   return (0);
 }
 
 
 // Verify transaction and add it to the pool if correct
-static int	trans_verify(transmsg_t trans, unsigned int numtxinblock, int difficulty)
+static int	trans_verify(worker_t &worker, transmsg_t trans, unsigned int numtxinblock, int difficulty)
 {
   account_t	sender;
   account_t	receiver;
   
-  std::string mykey = hash_binary_to_string(trans.sender);
+  std::string mykey = hash_binary_to_string(trans.data.sender);
   if (utxomap.find(mykey) == utxomap.end())
     {
       std::cerr << "Received transaction with unknown sender - ignoring" << std::endl;
       return (0);
     }  
   sender = utxomap[mykey];
-  mykey = hash_binary_to_string(trans.receiver);
+  mykey = hash_binary_to_string(trans.data.receiver);
   if (utxomap.find(mykey) == utxomap.end())
     {
       std::cerr << "Received transaction with unknown receiver - ignoring" << std::endl;
       return (0);
     }
   receiver = utxomap[mykey];
-  unsigned int	amount = atoi((const char *) trans.amount);
+  unsigned long long int amount = atoi((const char *) trans.data.amount);
   if (amount > sender.amount)
     {
       std::cerr << "Received transaction with bankrupt sender - ignoring" << std::endl;
       return (0);
     }
   transpool.push_back(trans);
+
+  // Send transaction to all remotes
+  for (clientmap_t::iterator it = worker.clients.begin(); it != worker.clients.end(); it++)
+    {
+      int len = send(*it, (char *) trans, sizeof(transmsg_t), 0);
+      if (len != sizeof(transmsg_t))
+	std::cerr << "Failed to send full transaction on remote socket - ignoring " << std::endl;
+    }
+
+  // Start mining if transpool contains enough transactions to make a block
   if (transpool.size() == numtxinblock)
-    do_mine(difficulty);
+    {
+      std::cerr << "Block is FULL - starting miner" << std::endl;
+      do_mine_fork(worker, difficulty, numtxinblock);
+    }
   return (0);      
 }
 
@@ -246,33 +365,35 @@ static int	trans_verify(transmsg_t trans, unsigned int numtxinblock, int difficu
 
 // Treat traffic from existing worker's clients
 // Could be transaction or block messages usually
-  static int	client_update(int port, int client_sock, unsigned int numtxinblock, int difficulty)
+static int	client_update(int port, int client_sock, unsigned int numtxinblock, int difficulty)
 {
   worker_t	worker = workermap[port];
   char		blockheight[32];
   transmsg_t	trans;
+  transdata_t	data;
   unsigned char opcode;
 
   int len = read(client_sock, &opcode, 1);
   if (len != 1)
-    FATAL("read");
+    FATAL("FAILED client update read");
 
   switch (opcode)
     {
     case OPCODE_SENDTRANS:
       std::cerr << "SENDTRANS OPCODE " << std::endl;
-
-      len = read(client_sock, &trans, sizeof(trans));
-      if (len != sizeof(trans))
+      len = read(client_sock, (char *) &data, sizeof(data));
+      if (len < sizeof(data))
       	FATAL("Not enough bytes in SENDTRANS message");
-      trans_verify(trans, numtxinblock, difficulty);
+      trans.hdr.opcode = OPCODE_SENDTRANS;
+      trans.data = data;
+      trans_verify(worker, trans, numtxinblock, difficulty);
       break;
       
     case OPCODE_SENDBLOCK:
       std::cerr << "SENDBLOCK OPCODE " << std::endl;
 
-      // If new block is the same height as block being mined, kill miner(s) and close their sockets
-      // If new block is height is greater, use GET_BLOCK/GET_HASH to synchronize local chain
+      // FIXME: If new block is the same height as block being mined, kill miner(s) and close their sockets
+      // FIXME: If new block is height is greater, use GET_BLOCK/GET_HASH to synchronize local chain
 
       std::cerr << "UNIMPLEMENTED: SENDBLOCK" << std::endl;
       return (0);
@@ -286,10 +407,9 @@ static int	trans_verify(transmsg_t trans, unsigned int numtxinblock, int difficu
       if (len != sizeof(blockheight))
 	FATAL("Not enough bytes in GETBLOCK message");
 
-      // send content of that block if it exists
+      // FIXME: send content of that block if it exists
       std::cerr << "UNIMPLEMENTED: GETBLOCK" << std::endl;
       return (0);
-      
       break;
       
     case OPCODE_GETHASH:
@@ -299,7 +419,7 @@ static int	trans_verify(transmsg_t trans, unsigned int numtxinblock, int difficu
       if (len != sizeof(blockheight))
 	FATAL("Not enough bytes in GETBLOCK message");
 
-      // send back the hash of that block if it exists
+      // FIXME: send back the hash of that block if it exists
       std::cerr << "UNIMPLEMENTED: GETHASH" << std::endl;
       return (0);
       
@@ -463,7 +583,15 @@ void	  execute_worker(unsigned int numtxinblock, int difficulty,
 		    FATAL("client_update");
 		}
 	    }
-	  
+
+	  // Check if we have any update from an existing miner
+	  int miner_sock = it->second.miner.sock;
+	  if (FD_ISSET(miner_sock, &readset))
+	    {
+	      ret = miner_update(it->second, miner_sock, numtxinblock);
+	      if (ret < 0)
+		FATAL("miner_update");
+	    }
 	}
 
     }
