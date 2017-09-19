@@ -1,9 +1,10 @@
 #include "node.h"
 
-workermap_t workermap;
-clientmap_t clientmap;
-UTXO	    utxomap;
-mempool_t   transpool;
+workermap_t	workermap;
+clientmap_t	clientmap;
+UTXO		utxomap;
+mempool_t	transpool;
+blockchain_t	chain;
 
 // Helper function to reset socket readset for select
 static int reset_readset(int boot_sock, fd_set *readset)
@@ -129,6 +130,7 @@ static int	bootnode_update(int boot_sock)
   return (0);
 }
 
+
 // Treat events on the worker server socket (new clients)
 static int		worker_update(int port)
 {
@@ -143,7 +145,6 @@ static int		worker_update(int port)
 	return (0);
       FATAL("Failed accept on worker server socket");
     }
-
   worker.clients.push_back(csock);
   return (0);
 }
@@ -156,9 +157,53 @@ static int	miner_update(int sock)
   return (0);
 }
 
+// Perform the action of mining. Write result on socket when available
+static int	do_mine(char *buff, int len, int difficulty, char *hash)
+{
+  int `		idx;
+
+  sha256((unsigned char*) buff, len, hash);      
+  for (idx = 0; idx < difficulty; idx++)
+    {
+      char c = hash[31 - idx];
+      if (c != '0')
+	return (-1);
+    }
+  return (0);
+}
+
 // Perform the action of mining: 
-static int	do_mine(int difficulty)
-{      
+static int	do_mine_fork(int difficulty)
+{
+  int		sock;
+  pid_t		pid;
+  
+  sock = socket(AF_UNIX, SOCK_STREAM, 0);
+  if (sock < 0)
+    FATAL("Failed to create AF_UNIX for miner");
+  pid = fork();
+  if (!pid)
+    {
+      unsigned char  hash[32];
+      blockmsg_t     lastblock = chain.top();
+      blockmsg_t	newblock;
+      
+      newblock.priorhash = ;
+      newblock.height = ;
+      sha256_mineraddr(newblock.mineraddr)
+      do {
+	// WIP
+	memset("");
+      }
+      while (do_mine(buff, len, difficulty, hash) < 0);
+      
+    }
+  else
+    {
+      
+    }
+  
+  
   // Launch miner (fork). Miner has UNIX socket that is added to the readset    
 
   return (0);

@@ -13,3 +13,8 @@ int		sha256(unsigned char *buff, unsigned int len, unsigned char *output)
 
   return (0);
 }
+
+void		sha256_mineraddr(unsigned char *output)
+{
+  sha256((unsigned char *) "jfv47", 5, output);
+}

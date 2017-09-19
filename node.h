@@ -83,11 +83,11 @@ typedef std::list<transmsg_t>	 mempool_t;
 typedef std::stack<block_t>	 blockchain_t;
 
 // Defined
-#define OPCODE_SENDTRANS	0
-#define OPCODE_SENDBLOCK	1
-#define OPCODE_GETBLOCK		2
-#define OPCODE_GETHASH		3
-#define OPCODE_SENDPORTS	4
+#define OPCODE_SENDTRANS	'0'
+#define OPCODE_SENDBLOCK	'1'
+#define OPCODE_GETBLOCK		'2'
+#define OPCODE_GETHASH		'3'
+#define OPCODE_SENDPORTS	'4'
 
 #define DEFAULT_TRANS_PER_BLOCK	50000
 
