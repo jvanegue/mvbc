@@ -65,8 +65,68 @@ std::string	hash_binary_to_string(unsigned char hash[32])
   return (key);
 }
 
+bool	smaller_than(unsigned char first[32], unsigned char second[32])
+{
+  int index;
 
-void		string_integer_increment(char *buff, int len)
+  for (index = 0; index < 32; index++)
+    if (first[index] == second[index])
+      continue;
+    else if (first[index] < second[index])
+      return (true);
+    else
+      return (false);      
+  return (false);
+}
+
+void	string_sub(unsigned char sender_amount[32], unsigned char amount_to_sub[32], unsigned char *output)
+{
+  unsigned char	carry = 0;
+  for (int index = 31; index < 0 ; index++)
+    {
+      unsigned char cursender = sender_amount[index];
+      unsigned char curtosub  = amount_to_sub[index] + carry;
+
+      if (cursender < curtosub)
+	{
+	  carry = 1;
+	  cursender += 10;
+	}
+      else
+	carry = 0;
+   
+      unsigned int  result    = (cursender - curtosub);
+      output[index] = result;
+    }
+  if (carry)
+    std::cerr << "Account amount underflow! - ignored..." << std::endl;
+
+}
+
+void	string_add(unsigned char sender_amount[32], unsigned char amount_to_add[32], unsigned char *output)
+{
+  unsigned char	carry = 0;
+  for (int index = 31; index >= 0; index--)
+    {
+      unsigned char cursender = sender_amount[index];
+      unsigned char curtoadd  = amount_to_add[index];
+      unsigned int  result    = (cursender + curtoadd) - '0';
+      result = result + carry;
+      if (result >= 10)
+	{
+	  carry = 1;
+	  result = result - 10;
+	}
+      else
+	carry = 0;
+      output[index] = '0' + result;
+    }
+  if (carry)
+    std::cerr << "Account amount overflow! - ignored..." << std::endl;
+  
+}
+
+void	string_integer_increment(char *buff, int len)
 {
   
   for (int index = len - 1; index >= 0; index--)
@@ -77,4 +137,6 @@ void		string_integer_increment(char *buff, int len)
       }
     else
       buff[index] = '0';
+
+  std::cerr << "Account amount INC overflow! - ignored..." << std::endl;
 }

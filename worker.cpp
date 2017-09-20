@@ -4,6 +4,7 @@ workermap_t	workermap;
 clientmap_t	clientmap;
 UTXO		utxomap;
 mempool_t	transpool;
+mempool_t	pending_transpool;
 blockchain_t	chain;
 
 // Helper function to reset socket readset for select
@@ -86,8 +87,8 @@ static int	client_connect(int port, remote_t &remote)
 static int	bootnode_update(int boot_sock)
 {
   bootmsg_t	msg;
-  int		len;
-  int		port;
+  int		len; 
+ int		port;
 
   while (1)
     {
@@ -166,7 +167,7 @@ static int	miner_update(worker_t& worker, int sock, int numtxinblock)
   if (len != sizeof(newblock))
     FATAL("Incomplete read in miner update");
   len = sizeof(transdata_t) * numtxinblock;
-  data = malloc(len);
+  data = (char *) malloc(len);
   if (data == NULL)
     FATAL("FAILED malloc in miner update");
   read = recv(sock, data, len, 0);
@@ -178,18 +179,18 @@ static int	miner_update(worker_t& worker, int sock, int numtxinblock)
     {
       remote_t	remote = it->second;
       char	c = OPCODE_SENDBLOCK;
-      int      len = send(remote->client_sock, &c, 1, 0);
+      int      len = send(remote.client_sock, &c, 1, 0);
       if (len != 1)
 	FATAL("Failed to send in miner_update");
-      len = send(remote->client_sock, (char *) &newblock, sizeog(newblock), 0);
+      len = send(remote.client_sock, (char *) &newblock, sizeof(newblock), 0);
       if (len != sizeof(newblock))
 	FATAL("Failed to send in miner_update 2");
-      int sent = send(remote->client_sock, (char *) data, len, 0);
+      int sent = send(remote.client_sock, (char *) data, len, 0);
       if (sent != len)
 	FATAL("Failed to send in miner_update 3");
     }
 
-  // Update wallets
+  // Update wallets amount values
   for (int idx = 0; idx < numtxinblock; idx++)
     {
       transdata_t *curtrans = (transdata_t *) &data[idx];
@@ -198,17 +199,24 @@ static int	miner_update(worker_t& worker, int sock, int numtxinblock)
       std::string sender_key = hash_binary_to_string(curtrans->sender);
       std::string receiver_key = hash_binary_to_string(curtrans->receiver);
 
+      if (utxomap.find(sender_key) == utxomap.end())
+	FATAL("Failed to find wallet by sender key - bad key encoding?");
+      if (utxomap.find(receiver_key) == utxomap.end())
+	FATAL("Failed to find wallet by receiver key - bad key encoding?");
       
+      account_t sender = utxomap[sender_key];
+      account_t receiver = utxomap[receiver_key];
       
-      
-      
+      unsigned char result[32], result2[32];
+      string_sub(sender.amount, curtrans->amount, result);
+      string_add(receiver.amount, curtrans->amount, result2);
+      memcpy(sender.amount, result, 32);
+      memcpy(receiver.amount, result2, 32);
     }
-  
-  // FIXME:
-  // 3 - update wallets
-  // 4 - remove all transaction from transpool - THIS SHOULD BE DONE ONCE WE LAUCHED IT FOR MINING
-  // 4 - close miner socket and set sock/pid to 0
-  
+
+  // Close UNIX socket and zero miner pid
+  close(worker.miner.sock);
+  worker.miner.sock = 0;
   return (0);
 }
 
@@ -268,14 +276,15 @@ static int	do_mine_fork(worker_t &worker, int difficulty, int numtxinblock)
 
       // Prepare for hashing
       len = sizeof(blockhash_t) + sizeof(transdata_t) * numtxinblock;
-      buff = malloc(len);
+      buff = (char *) malloc(len);
       if (buff == NULL)
 	FATAL("FAILED miner malloc");
       data = (blockhash_t *) buff;
-      memset(data.nonce, '0', sizeof(data.nonce));
-      data.priorhash = newblock.priorhash;
-      data.height = newblock.height;
-      data.mineraddr = newblock.mineraddr;
+      memset(data->nonce, '0', sizeof(data->nonce));
+
+      memcpy(data->priorhash, newblock.priorhash, 32);
+      memcpy(data->height, newblock.height, 32);
+      memcpy(data->mineraddr, newblock.mineraddr, 32);
 
       // Copy transaction buffer into block to mine
       int off = sizeof(blockhash_t);
@@ -290,7 +299,7 @@ static int	do_mine_fork(worker_t &worker, int difficulty, int numtxinblock)
 
       // Mine
       while (do_mine(buff, len, difficulty, (char *) hash) < 0)
-	string_integer_increment((char *) data.nonce, sizeof(data.nonce));	      
+	string_integer_increment((char *) data->nonce, sizeof(data->nonce));	      
       memcpy(newblock.hash, hash, sizeof(newblock.hash));
 
       // Send result on UNIX socket and exit
@@ -336,8 +345,7 @@ static int	trans_verify(worker_t &worker, transmsg_t trans, unsigned int numtxin
       return (0);
     }
   receiver = utxomap[mykey];
-  unsigned long long int amount = atoi((const char *) trans.data.amount);
-  if (amount > sender.amount)
+  if (smaller_than(sender.amount, trans.data.amount))
     {
       std::cerr << "Received transaction with bankrupt sender - ignoring" << std::endl;
       return (0);
@@ -345,9 +353,11 @@ static int	trans_verify(worker_t &worker, transmsg_t trans, unsigned int numtxin
   transpool.push_back(trans);
 
   // Send transaction to all remotes
-  for (clientmap_t::iterator it = worker.clients.begin(); it != worker.clients.end(); it++)
+  for (clientmap_t::iterator it = clientmap.begin(); it != clientmap.end(); it++)
     {
-      int len = send(*it, (char *) trans, sizeof(transmsg_t), 0);
+      remote_t remote = it->second;
+      
+      int len = send(remote.client_sock, (char *) &trans, sizeof(transmsg_t), 0);
       if (len != sizeof(transmsg_t))
 	std::cerr << "Failed to send full transaction on remote socket - ignoring " << std::endl;
     }
@@ -357,6 +367,8 @@ static int	trans_verify(worker_t &worker, transmsg_t trans, unsigned int numtxin
     {
       std::cerr << "Block is FULL - starting miner" << std::endl;
       do_mine_fork(worker, difficulty, numtxinblock);
+      pending_transpool = transpool;
+      transpool.clear();
     }
   return (0);      
 }
@@ -382,7 +394,7 @@ static int	client_update(int port, int client_sock, unsigned int numtxinblock, i
     case OPCODE_SENDTRANS:
       std::cerr << "SENDTRANS OPCODE " << std::endl;
       len = read(client_sock, (char *) &data, sizeof(data));
-      if (len < sizeof(data))
+      if (len < (int) sizeof(data))
       	FATAL("Not enough bytes in SENDTRANS message");
       trans.hdr.opcode = OPCODE_SENDTRANS;
       trans.data = data;
@@ -396,8 +408,6 @@ static int	client_update(int port, int client_sock, unsigned int numtxinblock, i
       // FIXME: If new block is height is greater, use GET_BLOCK/GET_HASH to synchronize local chain
 
       std::cerr << "UNIMPLEMENTED: SENDBLOCK" << std::endl;
-      return (0);
-      
       break;
       
     case OPCODE_GETBLOCK:
@@ -452,7 +462,9 @@ void		UTXO_init()
       memset(buff, 0x00, sizeof(buff));
       len = snprintf(buff, sizeof(buff), "%u", predef);
       sha256((unsigned char*) buff, len, hash);
-      acc.amount = 100000;
+      len = snprintf((char *) acc.amount, 32, "%032u", 100000);
+      if (len != 32)
+	FATAL("Failed to initialize amount with 32 chars");
       key = hash_binary_to_string(hash);
       utxomap[key] = acc;
     }

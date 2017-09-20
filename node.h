@@ -88,7 +88,7 @@ typedef struct		remote
 
 typedef struct		 account
 {
-  unsigned long long int amount;
+   unsigned char	 amount[32];
 }			 account_t;
 
 typedef unsigned long long int ullint;
@@ -124,3 +124,7 @@ char		*unpack_sendblock(char *buf, int len);
 char		*unpack_sendtransaction(char *buf, int len);
 std::string	hash_binary_to_string(unsigned char hash[32]);
 void		string_integer_increment(char *buff, int len);
+
+void	string_sub(unsigned char sender_amount[32], unsigned char amount_to_sub[32], unsigned char *output);
+void	string_add(unsigned char sender_amount[32], unsigned char amount_to_sub[32], unsigned char *output);
+bool	smaller_than(unsigned char first[32], unsigned char second[32]);
