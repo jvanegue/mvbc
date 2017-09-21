@@ -15,6 +15,7 @@
 #include <unistd.h>
 #include <sstream>
 #include <fcntl.h>
+#include <signal.h>
 
 // Types
 typedef struct __attribute__((packed, aligned(1))) bootmsg
@@ -62,7 +63,7 @@ typedef struct __attribute__((packed, aligned(1))) blockdata
 typedef struct		block
 {
   blockmsg_t		hdr;
-  transmsg_t		*trans;
+  //transmsg_t		*trans;
 }			block_t;
 
 typedef struct		miner
@@ -98,7 +99,7 @@ typedef std::map<int, remote_t>  clientmap_t;
 typedef std::map<int, worker_t>  workermap_t;
 typedef std::map<int, miner_t>   minermap_t;
 typedef std::map<std::string,account_t> UTXO;
-typedef std::list<transmsg_t>	 mempool_t;
+typedef std::map<std::string,transmsg_t> mempool_t;
 typedef std::stack<block_t>	 blockchain_t;
 
 // Defined

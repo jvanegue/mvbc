@@ -8,8 +8,6 @@ void			execute_bootstrap()
   int			max;
   int			sock;
   struct sockaddr_in	addr;
-  socklen_t		clen = 0;      
-  struct sockaddr_in	client;
       
   std::cout << "Executing in bootstrap mode" << std::endl;
 
@@ -52,7 +50,7 @@ void			execute_bootstrap()
 
       if (FD_ISSET(sock, &readset))
 	{
-	  int csock = accept(sock, (struct sockaddr *) &client, &clen);
+	  int csock = accept(sock, NULL, NULL);
 	  if (csock <= 0)
 	    FATAL("accept");
 	  csocks.push_back(csock);
@@ -78,13 +76,14 @@ void			execute_bootstrap()
 		break;
 	      }
 	    
-	    fprintf(stderr, "Received portnum = ");
+	    fprintf(stderr, "Received PortNum = %c%c%c%c%c%c ", msg.port[0], msg.port[1], msg.port[2], msg.port[3], msg.port[4], msg.port[5]);
 	    int idx = 0;
-	    for (idx = 0; idx < 6; idx++)
-	      fprintf(stderr, "\\x%02X", msg.port[idx]);
-	    fprintf(stderr, " hash = ");
+	    fprintf(stderr, " NodeAddr = ");
 	    for (idx = 0; idx < 32; idx++)
-	      fprintf(stderr, "\\x%02X", msg.addr[idx]);	      
+	      {
+		unsigned char c = msg.addr[idx];
+		fprintf(stderr, "%u ", (unsigned int) c);
+	      }
 	    fprintf(stderr, "\n");
 	    portmap[*it] = msg;
 	  }

@@ -1,13 +1,13 @@
-SRC = main.cpp bootstrap.cpp worker.cpp build.cpp hash.cpp
+SRC = src/main.cpp src/bootstrap.cpp src/worker.cpp src/build.cpp src/hash.cpp
 OBJ = $(SRC:.cpp=.o)
 EXE = node
 CC  = g++
-CFLAGS = -Wall -g3
-CPPFLAGS = -Wall -g3
+CFLAGS = -Wall -g3 -Isrc
+CPPFLAGS = -Wall -g3 -Isrc
 LDFLAGS = -lcrypto
 
 all: $(OBJ)
 	$(CC) $(OBJ) -o $(EXE) $(LDFLAGS)
 
 clean:
-	rm -f $(OBJ) *~ node
+	rm -f $(OBJ) src/*~ node

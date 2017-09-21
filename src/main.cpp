@@ -11,7 +11,7 @@ int		numtxinblock = DEFAULT_TRANS_PER_BLOCK;
 void help_and_exit(std::string msg, char *str)
 {
   std::cerr << "Error : " << msg << std::endl;
-  std::cerr << "Syntax: " << std::string(str) << " [-bootstrap | -numworkers <num> -ports <ports>]"
+  std::cerr << "Syntax: " << std::string(str) << " [-bootstrap | -numtxinblock <num> -numworkers <num> -ports <ports> -difficulty <num>]"
 	    << std::endl;
   exit(-1);
 }
