@@ -126,6 +126,7 @@ char		*unpack_sendtransaction(char *buf, int len);
 std::string	hash_binary_to_string(unsigned char hash[32]);
 void		string_integer_increment(char *buff, int len);
 
-void	string_sub(unsigned char sender_amount[32], unsigned char amount_to_sub[32], unsigned char *output);
-void	string_add(unsigned char sender_amount[32], unsigned char amount_to_sub[32], unsigned char *output);
+void	string_sub(unsigned char sender_amt[32], unsigned char amt2sub[32], unsigned char *output);
+void	string_add(unsigned char sender_amt[32], unsigned char amt2sub[32], unsigned char *output);
 bool	smaller_than(unsigned char first[32], unsigned char second[32]);
+void	wallet_print(const char *prefix, unsigned char sender[32], unsigned char receiver[32]);

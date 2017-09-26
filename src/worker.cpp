@@ -13,8 +13,11 @@ static int reset_readset(int boot_sock, fd_set *readset)
   int max = 0;
 
   FD_ZERO(readset);
-  FD_SET(boot_sock, readset);
-  max = boot_sock;
+  if (boot_sock != 0)
+    {
+      FD_SET(boot_sock, readset);
+      max = boot_sock;
+    }
   
   for (workermap_t::iterator it = workermap.begin(); it != workermap.end(); it++)
     {
@@ -94,9 +97,9 @@ static int	client_connect(int port, remote_t &remote)
 
 
 // Treat events on the bootstrap node socket (possibly new remotes to connect to)
-static int	bootnode_update(int boot_sock)
+static void	bootnode_update(int boot_sock)
 {
-  char		buf[8];
+  char		buf[7];
   int		len; 
   int		port;
   char		*ports = NULL;
@@ -104,42 +107,50 @@ static int	bootnode_update(int boot_sock)
   std::cerr << "Bootnode update!" << std::endl;
   
   memset(buf, 0x00, sizeof(buf));
-  len = read(boot_sock, buf, 7);
+  len = read(boot_sock, buf, 6);
   if (len < 0)
-    FATAL("Boot socket closed - shutting node down");
+    {
+      std::cerr << "Bootnode socket closed" << std::endl;
+      return;
+    }
   else if (len == 0)
     {
       std::cerr << "1 Bootnode update read = 0" << std::endl;
-      return (0);
+      return;
     }
 
   std::cerr << "Received bytes on bootnode update: ";
   for (int idx = 0; idx < 6; idx++)
-    {
-      fprintf(stderr, "%u ", (unsigned int) buf[idx]);
-    }
+    fprintf(stderr, "%u ", (unsigned int) buf[idx]);
   std::cerr << std::endl;
   
-  int numofports = atoi(buf + 1);
+  int numofports = atoi(buf);
   if (numofports == 0)
     {
       std::cerr << "Numofports = 0 : return early" << std::endl;
-      return (0);
+      return;
     }
   
   std::cerr << "Bootnode update: found numofport = " << numofports << std::endl;
   
   ports = (char *) malloc(numofports * 6);
   if (ports == NULL)
-    FATAL("malloc");
+    {
+      std::cerr << "Invalid number of ports - shutting down boot socket" << std::endl;
+      return;
+    }
   len = read(boot_sock, ports, numofports * 6);
   if (len < 0)
-    FATAL("Boot socket closed - shutting node down 2");
+    {
+      std::cerr << "Unable to read - shutting down boot socket" << std::endl;
+      free(ports);
+      return;
+    }
   else if (len == 0)
     {
       std::cerr << "2 Bootnode update read = 0" << std::endl;
       free(ports);
-      return (0);
+      return;
     }
   
   for (int idx = 0; idx < numofports; idx++)
@@ -150,7 +161,8 @@ static int	bootnode_update(int boot_sock)
       clientmap_t::iterator it = clientmap.find(port);
       if (workermap.find(port) != workermap.end())
 	{
-	  std::cerr << "PORT " << port << " is a local worker - do not establish remote" << std::endl;
+	  std::cerr << "PORT " << port << " is a local worker - do not establish remote"
+		    << std::endl;
 	}
       else if (it == clientmap.end())
 	{
@@ -161,18 +173,23 @@ static int	bootnode_update(int boot_sock)
 	  
 	  res = client_connect(port, newclient);
 	  if (res < 0)
-	    FATAL("Failed to create new client");
+	    {
+	      std::cerr << "Failed to create new client" << std::endl;
+	      free(ports);
+	      return;
+	    }
 
 	  std::cerr << "Added new client to clientmap (port " << port << ")" << std::endl;
 	}
       else if (it != clientmap.end())
 	{
-	  std::cerr << "Existing client (port " << port << ") declared by boot node - unchanged entry" << std::endl;
+	  std::cerr << "Existing client (port " << port
+		    << ") declared by boot node - unchanged entry" << std::endl;
 	}
     }
 
   free(ports);
-  return (0);
+  return;
 }
 
 
@@ -265,11 +282,16 @@ static int	miner_update(worker_t& worker, int sock, int numtxinblock)
 	FATAL("Failed to find wallet by receiver key - bad key encoding?");
       
       account_t sender = utxomap[sender_key];
-      account_t receiver = utxomap[receiver_key];
-      
+      account_t receiver = utxomap[receiver_key];      
       unsigned char result[32], result2[32];
+
+      wallet_print("Before transaction: [S/R] : ", sender.amount, receiver.amount);
+      
       string_sub(sender.amount, curtrans->amount, result);
       string_add(receiver.amount, curtrans->amount, result2);
+
+      wallet_print("After transaction: [S/R] : ", sender.amount, receiver.amount);
+      
       memcpy(sender.amount, result, 32);
       memcpy(receiver.amount, result2, 32);
     }
@@ -410,16 +432,24 @@ bool		trans_exists(transmsg_t trans)
 {
   std::string	transkey;
 
-  transkey = hash_binary_to_string(trans.data.sender) + hash_binary_to_string(trans.data.receiver) +
-    hash_binary_to_string(trans.data.amount) + hash_binary_to_string(trans.data.timestamp);
-  if (transpool.find(transkey) == transpool.end() && pending_transpool.find(transkey) == pending_transpool.end())
+  transkey = hash_binary_to_string(trans.data.sender) +
+    hash_binary_to_string(trans.data.receiver) +
+    hash_binary_to_string(trans.data.amount) +
+    hash_binary_to_string(trans.data.timestamp);
+  
+  if (transpool.find(transkey) == transpool.end() &&
+      pending_transpool.find(transkey) == pending_transpool.end())
     return (false);
+  
   return (true);
 }
 
 
 // Verify transaction and add it to the pool if correct
-static int	trans_verify(worker_t &worker, transmsg_t trans, unsigned int numtxinblock, int difficulty)
+static int	trans_verify(worker_t &worker,
+			     transmsg_t trans,
+			     unsigned int numtxinblock,
+			     int difficulty)
 {
   account_t	sender;
   account_t	receiver;
@@ -452,8 +482,11 @@ static int	trans_verify(worker_t &worker, transmsg_t trans, unsigned int numtxin
       return (0);
     }
 
-  std::string transkey = hash_binary_to_string(trans.data.sender) + hash_binary_to_string(trans.data.receiver) +
-    hash_binary_to_string(trans.data.amount) + hash_binary_to_string(trans.data.timestamp);
+  std::string transkey = hash_binary_to_string(trans.data.sender) +
+    hash_binary_to_string(trans.data.receiver) +
+    hash_binary_to_string(trans.data.amount) +
+    hash_binary_to_string(trans.data.timestamp);
+  
   transpool[transkey] = trans;
 
   std::cerr << "Added transaction to mempool" << std::endl;
@@ -549,13 +582,17 @@ static bool	chain_store(blockmsg_t msg, char *transdata, unsigned int numtxinblo
       for (unsigned int idx = 0; idx < numtxinblock; idx++)
 	{
 	  transdata_t *curdata = ((transdata_t *) transdata) + idx;
-	  std::string transkey = hash_binary_to_string(curdata->sender) + hash_binary_to_string(curdata->receiver) +
-	    hash_binary_to_string(curdata->amount) + hash_binary_to_string(curdata->timestamp);
+	  std::string transkey = hash_binary_to_string(curdata->sender) +
+	    hash_binary_to_string(curdata->receiver) +
+	    hash_binary_to_string(curdata->amount) +
+	    hash_binary_to_string(curdata->timestamp);
+	  
 	  if (transpool.find(transkey) != transpool.end())
 	    transpool.erase(transkey);	  
 	}
 
-      std::cerr << "CLEANED transpool after extending chain (" << transpool.size() << " trans left)" << std::endl;
+      std::cerr << "CLEANED transpool after extending chain (" <<
+	transpool.size() << " trans left)" << std::endl;
     }
 
   // A block way above us - must retreive several blocks
@@ -590,6 +627,8 @@ static int	client_update(int port, int client_sock, unsigned int numtxinblock, i
 
   switch (opcode)
     {
+
+      // Send transaction opcode
     case OPCODE_SENDTRANS:
       std::cerr << "SENDTRANS OPCODE " << std::endl;
       len = read(client_sock, (char *) &data, sizeof(data));
@@ -598,8 +637,10 @@ static int	client_update(int port, int client_sock, unsigned int numtxinblock, i
       trans.hdr.opcode = OPCODE_SENDTRANS;
       trans.data = data;
       trans_verify(worker, trans, numtxinblock, difficulty);
+      return (0);
       break;
-      
+
+      // Send block opcode
     case OPCODE_SENDBLOCK:
       std::cerr << "SENDBLOCK OPCODE " << std::endl;
       transdata = (char *) malloc(numtxinblock * 128);
@@ -615,7 +656,8 @@ static int	client_update(int port, int client_sock, unsigned int numtxinblock, i
       free(transdata);
       return (0);
       break;
-      
+
+      // Get block opcode
     case OPCODE_GETBLOCK:
       std::cerr << "GETBLOCK OPCODE " << std::endl;
 
@@ -627,10 +669,10 @@ static int	client_update(int port, int client_sock, unsigned int numtxinblock, i
       std::cerr << "UNIMPLEMENTED: GETBLOCK" << std::endl;
       exit(-1);
       break;
-      
+
+      // Get hash opcode
     case OPCODE_GETHASH:
       std::cerr << "GETHASH OPCODE " << std::endl;
-
       len = read(client_sock, blockheight, sizeof(blockheight));
       if (len != sizeof(blockheight))
 	FATAL("Not enough bytes in GETBLOCK message");
@@ -639,6 +681,14 @@ static int	client_update(int port, int client_sock, unsigned int numtxinblock, i
       std::cerr << "UNIMPLEMENTED: GETHASH" << std::endl;
       exit(-1);
       break;
+
+      // Send ports opcode (only sent via boot node generally)
+    case OPCODE_SENDPORTS:
+      std::cerr << "SENDPORT OPCODE " << std::endl;
+      bootnode_update(client_sock);
+      return (1);
+      break;
+
       
     default:
       std::cerr << "INVALID OPCODE " << std::endl;
@@ -770,11 +820,18 @@ void	  execute_worker(unsigned int numtxinblock, int difficulty,
 	FATAL("select");
 
       // Will possibly update the remote map if boot node advertize new nodes
-      if (FD_ISSET(boot_sock, &readset))
+      if (boot_sock != 0 && FD_ISSET(boot_sock, &readset))
 	{
-	  ret = bootnode_update(boot_sock);
-	  if (ret < 0)
-	    FATAL("bootnode_update");
+	  unsigned char opcode;
+	  
+	  ret = read(boot_sock, &opcode, 1);
+	  if (ret != 1 || opcode != OPCODE_SENDPORTS)
+	    std::cerr << "Invalid SENDPORTS opcode from boot node" << std::endl;
+	  else
+	    bootnode_update(boot_sock);
+	  close(boot_sock);
+	  boot_sock = 0;
+	  std::cerr << "Boot socket closed" << std::endl;
 	  continue;
 	}
 
@@ -799,10 +856,15 @@ void	  execute_worker(unsigned int numtxinblock, int difficulty,
 		{
 		  ret = client_update(it->first, client_sock, numtxinblock, difficulty);
 		  if (ret < 0)
-		    FATAL("client_update");
+		    {
+		      std::cerr << "Error during client update" << std::endl;
+		      close(client_sock);
+		      it2 = it->second.clients.erase(it2);
+		    }
 		  else if (ret == 1)
 		    {
 		      std::cerr << "Removed client from worker clients list" << std::endl;
+		      close(client_sock);
 		      it2 = it->second.clients.erase(it2);
 		    }
 		  break;

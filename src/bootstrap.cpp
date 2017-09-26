@@ -1,5 +1,4 @@
 #include "node.h"
-
 void			execute_bootstrap()
 {
   std::list<int>	csocks;
@@ -72,11 +71,11 @@ void			execute_bootstrap()
 		portmap.erase(*it);
 		FD_CLR((*it), &readset);
 		std::cout << "Removed socket " << (*it) << std::endl;
-		//continue;
 		break;
 	      }
 	    
-	    fprintf(stderr, "Received PortNum = %c%c%c%c%c%c ", msg.port[0], msg.port[1], msg.port[2], msg.port[3], msg.port[4], msg.port[5]);
+	    fprintf(stderr, "Received PortNum = %c%c%c%c%c%c ",
+		    msg.port[0], msg.port[1], msg.port[2], msg.port[3], msg.port[4], msg.port[5]);
 	    int idx = 0;
 	    fprintf(stderr, " NodeAddr = ");
 	    for (idx = 0; idx < 32; idx++)

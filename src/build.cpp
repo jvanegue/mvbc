@@ -129,7 +129,30 @@ void	string_sub(unsigned char sender_amount[32], unsigned char amount_to_sub[32]
 
 }
 
-void	string_add(unsigned char sender_amount[32], unsigned char amount_to_add[32], unsigned char *output)
+
+void	wallet_print(const char *prefix,
+		     unsigned char sender[32],
+		     unsigned char receiver[32])
+{
+  unsigned char sender_null[33];
+  unsigned char receiver_null[33];
+
+  memcpy(sender_null, sender, 32);
+  memcpy(receiver_null, receiver, 32);
+  sender_null[32] = 0x00;
+  receiver_null[32] = 0x00;
+
+  const std::string	prefix_str(prefix);
+  std::string		sender_str((const char *) sender_null);
+  std::string		receiver_str((const char *) receiver_null);
+  
+  std::cerr << prefix_str << sender_str << " " << receiver_str << std::endl;
+}
+
+
+void	string_add(unsigned char sender_amount[32],
+		   unsigned char amount_to_add[32],
+		   unsigned char *output)
 {
   unsigned char	carry = 0;
   for (int index = 31; index >= 0; index--)
