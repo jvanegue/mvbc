@@ -24,6 +24,12 @@ typedef struct __attribute__((packed, aligned(1))) bootmsg
   unsigned char		addr[32];
 }			bootmsg_t;
 
+typedef struct __attribute__((packed, aligned(1))) bootclient
+{
+  int			csock;
+  bootmsg_t		config;
+}			bootclient_t;
+
 typedef struct __attribute__((packed, aligned(1))) hdr
 {
   char			opcode;
@@ -94,7 +100,7 @@ typedef struct		 account
 
 typedef unsigned long long int ullint;
 typedef unsigned int uint;
-typedef std::map<int, bootmsg_t> bootmap_t;
+typedef std::list<bootclient_t>  bootmap_t;
 typedef std::map<int, remote_t>  clientmap_t;
 typedef std::map<int, worker_t>  workermap_t;
 typedef std::map<int, miner_t>   minermap_t;
@@ -129,4 +135,5 @@ void		string_integer_increment(char *buff, int len);
 void	string_sub(unsigned char sender_amt[32], unsigned char amt2sub[32], unsigned char *output);
 void	string_add(unsigned char sender_amt[32], unsigned char amt2sub[32], unsigned char *output);
 bool	smaller_than(unsigned char first[32], unsigned char second[32]);
-void	wallet_print(const char *prefix, unsigned char sender[32], unsigned char receiver[32]);
+void	wallet_print(const char *prefix, unsigned char sender[32],
+		     unsigned char amount[32], unsigned char receiver[32]);

@@ -2,6 +2,7 @@
 
 // Build a SEND_PORT message
 
+
 char		*pack_sendport(bootmap_t portmap, int *len)
 {
   unsigned int	 mapsize = portmap.size();
@@ -25,8 +26,7 @@ char		*pack_sendport(bootmap_t portmap, int *len)
 
   for (bootmap_t::iterator it = portmap.begin(); it != portmap.end(); it++)
     {
-      //int port = it->first;
-      memcpy(reply + off, it->second.port, 6);
+      memcpy(reply + off, it->config.port, 6);
       off += 6;
     }
   
@@ -108,11 +108,10 @@ bool	smaller_than(unsigned char first[32], unsigned char second[32])
 void	string_sub(unsigned char sender_amount[32], unsigned char amount_to_sub[32], unsigned char *output)
 {
   unsigned char	carry = 0;
-  for (int index = 31; index < 0 ; index++)
+  for (int index = 31; index >= 0; index--)
     {
-      unsigned char cursender = sender_amount[index];
-      unsigned char curtosub  = amount_to_sub[index] + carry;
-
+      unsigned char cursender = sender_amount[index] - '0';
+      unsigned char curtosub  = amount_to_sub[index] + carry - '0';
       if (cursender < curtosub)
 	{
 	  carry = 1;
@@ -122,31 +121,42 @@ void	string_sub(unsigned char sender_amount[32], unsigned char amount_to_sub[32]
 	carry = 0;
    
       unsigned int  result    = (cursender - curtosub);
-      output[index] = result;
+
+      if (result > 9)
+	std::cerr << "sub result is bigger than 10 - this should never happen!" << std::endl;
+      
+      output[index] = result + '0';
     }
   if (carry)
-    std::cerr << "Account amount underflow! - ignored..." << std::endl;
+    std::cerr << "WARNING: SUB Account amount underflow (not enough funds)" << std::endl;
 
 }
 
 
 void	wallet_print(const char *prefix,
 		     unsigned char sender[32],
+		     unsigned char amount[32],
 		     unsigned char receiver[32])
 {
   unsigned char sender_null[33];
   unsigned char receiver_null[33];
+  unsigned char amount_null[32];
 
   memcpy(sender_null, sender, 32);
   memcpy(receiver_null, receiver, 32);
+  memcpy(amount_null, amount, 32);
+  
   sender_null[32] = 0x00;
   receiver_null[32] = 0x00;
+  amount_null[32] = 0x00;
 
   const std::string	prefix_str(prefix);
   std::string		sender_str((const char *) sender_null);
   std::string		receiver_str((const char *) receiver_null);
+  std::string		amount_str((const char *) amount_null);
   
-  std::cerr << prefix_str << sender_str << " " << receiver_str << std::endl;
+  std::cerr << prefix_str << "SENDER AMOUNT " << sender_str
+	    << " to transfer " << amount_str << " to RECEIVER CURAMOUNT: " << receiver_str << std::endl;
 }
 
 
@@ -157,11 +167,10 @@ void	string_add(unsigned char sender_amount[32],
   unsigned char	carry = 0;
   for (int index = 31; index >= 0; index--)
     {
-      unsigned char cursender = sender_amount[index];
-      unsigned char curtoadd  = amount_to_add[index];
-      unsigned int  result    = (cursender + curtoadd) - '0';
-      result = result + carry;
-      if (result >= 10)
+      unsigned char cursender = sender_amount[index] - '0';
+      unsigned char curtoadd  = amount_to_add[index] - '0';
+      unsigned int  result    = (cursender + curtoadd) + carry;
+      if (result > 9)
 	{
 	  carry = 1;
 	  result = result - 10;
@@ -171,7 +180,7 @@ void	string_add(unsigned char sender_amount[32],
       output[index] = '0' + result;
     }
   if (carry)
-    std::cerr << "Account amount overflow! - ignored..." << std::endl;
+    std::cerr << "WARNING: ADD Account amount overflow! (wallet is full)" << std::endl;
   
 }
 

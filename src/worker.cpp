@@ -285,12 +285,12 @@ static int	miner_update(worker_t& worker, int sock, int numtxinblock)
       account_t receiver = utxomap[receiver_key];      
       unsigned char result[32], result2[32];
 
-      wallet_print("Before transaction: [S/R] : ", sender.amount, receiver.amount);
+      wallet_print("Before transaction: ", sender.amount, curtrans->amount, receiver.amount);
       
       string_sub(sender.amount, curtrans->amount, result);
       string_add(receiver.amount, curtrans->amount, result2);
 
-      wallet_print("After transaction: [S/R] : ", sender.amount, receiver.amount);
+      wallet_print("After transaction: ", sender.amount, curtrans->amount, receiver.amount);
       
       memcpy(sender.amount, result, 32);
       memcpy(receiver.amount, result2, 32);
@@ -389,7 +389,7 @@ static int	do_mine_fork(worker_t &worker, int difficulty, int numtxinblock)
 	  memcpy(buff + off, &curdata, sizeof(curdata));
 	  off += sizeof(transdata_t);
 	}
-
+      
       // Mine
       while (do_mine(buff, len, difficulty, (char *) hash) < 0)
 	string_integer_increment((char *) data->nonce, sizeof(data->nonce));	      
