@@ -137,3 +137,5 @@ void	string_add(unsigned char sender_amt[32], unsigned char amt2sub[32], unsigne
 bool	smaller_than(unsigned char first[32], unsigned char second[32]);
 void	wallet_print(const char *prefix, unsigned char sender[32],
 		     unsigned char amount[32], unsigned char receiver[32]);
+std::string	tag2str(unsigned char str[32]);
+int	async_send(int fd, char *buff, int len, const char *errstr);

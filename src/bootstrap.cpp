@@ -124,7 +124,7 @@ void			execute_bootstrap()
 	    
 	    it->config = msg;
 	  }
-
+      
       // Make sure all disconnected clients are removed from the read set
       if (updated == false)
 	continue;
@@ -170,11 +170,16 @@ void			execute_bootstrap()
 		std::cerr << "Connected to worker port " << iport << std::endl;
 	      
 	    }
-	  
+
+	retry:
 	  err = send(dstsock, reply, len, 0);
+	  if (err == 0)
+	    goto retry;
 	  if (err < 0)
 	    std::cerr << "Failed to send update to worker on port " << iport << std::endl;
 
+	  std::cerr << "Sent " << len << " bytes to socket on port " << iport << std::endl;
+	  
 	  std::cerr << "Closing socket " << dstsock << std::endl;
 	  
 	  close(dstsock);

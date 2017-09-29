@@ -51,6 +51,7 @@ static int reset_readset(int boot_sock, fd_set *readset)
   return (max);
 }
 
+
 // Connect to a new client advertized by the boot node
 static int	client_connect(int port, remote_t &remote)
 {
@@ -62,7 +63,7 @@ static int	client_connect(int port, remote_t &remote)
   // Connect to new remote node
   client_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
   if (client_sock < 0)
-    FATAL("socket");
+    FATAL("client_connect socket");
 
   std::cerr << "Connecting client on port " << port << std::endl;
   
@@ -232,19 +233,32 @@ static int	miner_update(worker_t& worker, int sock, int numtxinblock)
   
   // Read mined block from miner
   int len = read(sock, (char *) &newblock, sizeof(newblock));
+  if (len == 0)
+    {
+      std::cerr << "Miner read returned 0 : passing" << std::endl;
+      return (0);
+    }
   if (len != sizeof(newblock))
     {
-      std::cerr << "READ " << len << " bytes from miner pipefd" << std::endl;
-      FATAL("Incomplete read in miner update");
+      std::cerr << "INCOMPLETE READ " << len << " bytes from miner pipefd" << std::endl;
+      return (-1);
     }
   
   len = sizeof(transdata_t) * numtxinblock;
   data = (char *) malloc(len);
   if (data == NULL)
-    FATAL("FAILED malloc in miner update");
+    {
+      std::cerr << "Failed to malloc in miner update" << std::endl;
+      return (-1);
+    }
+  
   readlen = read(sock, data, len);
   if (readlen != len)
-    FATAL("Incomplete read in miner update 2");
+    {
+      std::cerr << "Failed to send in miner update 2" << std::endl;
+      free(data);
+      return (-1);
+    }
 
   std::cerr << "MINER READ!" << std::endl;
   
@@ -256,15 +270,9 @@ static int	miner_update(worker_t& worker, int sock, int numtxinblock)
 
       std::cerr << "Sending block to remote on port " << remote.remote_port << std::endl;
       
-      int      sent = send(remote.client_sock, &c, 1, 0);
-      if (sent != 1)
-	FATAL("Failed to send in miner_update");
-      sent = send(remote.client_sock, (char *) &newblock, sizeof(newblock), 0);
-      if (sent != sizeof(newblock))
-	FATAL("Failed to send in miner_update 2");
-      sent = send(remote.client_sock, (char *) data, len, 0);
-      if (sent != len)
-	FATAL("Failed to send in miner_update 3");
+      async_send(remote.client_sock, &c, 1, "Miner update");
+      async_send(remote.client_sock, (char *) &newblock, sizeof(newblock), "Miner update 2");
+      async_send(remote.client_sock, (char *) data, len, "Miner update 3");
     }
 
   // Update wallets amount values
@@ -277,9 +285,18 @@ static int	miner_update(worker_t& worker, int sock, int numtxinblock)
       std::string receiver_key = hash_binary_to_string(curtrans->receiver);
 
       if (utxomap.find(sender_key) == utxomap.end())
-	FATAL("Failed to find wallet by sender key - bad key encoding?");
+	{
+	  std::cerr << "Failed to find wallet by sender key - bad key encoding?" << std::endl;
+	  free(data);
+	  return (-1);
+	}
+
       if (utxomap.find(receiver_key) == utxomap.end())
-	FATAL("Failed to find wallet by receiver key - bad key encoding?");
+	{
+	  std::cerr << "Failed to find wallet by receiver key - bad key encoding?" << std::endl;
+	  free(data);
+	  return (-1);
+	}
       
       account_t sender = utxomap[sender_key];
       account_t receiver = utxomap[receiver_key];      
@@ -307,7 +324,7 @@ static int	miner_update(worker_t& worker, int sock, int numtxinblock)
 
   free(data);
   
-  std::cerr << "Block chain and Wallets updated!" << std::endl;
+  std::cerr << "Blockchain and Wallets updated! new current height = " << tag2str(newblock.height) << std::endl;
   
   return (0);
 }
@@ -495,18 +512,15 @@ static int	trans_verify(worker_t &worker,
   for (clientmap_t::iterator it = clientmap.begin(); it != clientmap.end(); it++)
     {
       remote_t remote = it->second;
-      
-      int len = send(remote.client_sock, (char *) &trans, sizeof(transmsg_t), 0);
-      if (len != sizeof(transmsg_t))
-	std::cerr << "Failed to send full transaction on remote socket - ignoring " << std::endl;
 
+      async_send(remote.client_sock, (char *) &trans, sizeof(transmsg_t), "Send transaction on remote");
       std::cerr << "Sent transaction to remote port " << remote.remote_port << std::endl;
     }
 
   // Start mining if transpool contains enough transactions to make a block
   if (transpool.size() == numtxinblock)
     {
-      std::cerr << "Block is FULL - starting miner" << std::endl;
+      std::cerr << "Block is FULL " << numtxinblock << " - starting miner" << std::endl;
       do_mine_fork(worker, difficulty, numtxinblock);
 
       pending_transpool.insert(transpool.begin(), transpool.end());
@@ -562,8 +576,9 @@ static bool	chain_store(blockmsg_t msg, char *transdata, unsigned int numtxinblo
       // Kill any existing miner and push new block on chain
       if (miner.pid)
 	{
-	  miner.sock = 0;
 	  close(miner.sock);
+	  //FD_CLR(miner.sock, &readset); -- no readset here, is it an issue?
+	  miner.sock = 0;
 	  kill(miner.pid, SIGTERM);
 	  transpool.insert(pending_transpool.begin(), pending_transpool.end());
 	  pending_transpool.clear();
@@ -632,6 +647,12 @@ static int	client_update(int port, int client_sock, unsigned int numtxinblock, i
     case OPCODE_SENDTRANS:
       std::cerr << "SENDTRANS OPCODE " << std::endl;
       len = read(client_sock, (char *) &data, sizeof(data));
+      if (len == 0)
+	{
+	  std::cerr << "SENDTRANS read for data returned 0 - passing" << std::endl;
+	  return (0);
+	}
+      
       if (len < (int) sizeof(data))
       	FATAL("Not enough bytes in SENDTRANS message");
       trans.hdr.opcode = OPCODE_SENDTRANS;
@@ -801,9 +822,7 @@ void	  execute_worker(unsigned int numtxinblock, int difficulty,
       // Advertize new worker to bootstrap node
       bootmsg_t msg;
       pack_bootmsg(port, &msg);
-      err = send(boot_sock, (char *) &msg, sizeof(msg), 0);
-      if (err < 0)
-	FATAL("send");
+      async_send(boot_sock, (char *) &msg, sizeof(msg), "BOOTMSG");
     }
   
   // Listen to all incoming traffic
@@ -823,13 +842,17 @@ void	  execute_worker(unsigned int numtxinblock, int difficulty,
       if (boot_sock != 0 && FD_ISSET(boot_sock, &readset))
 	{
 	  unsigned char opcode;
-	  
+
+	retry:
 	  ret = read(boot_sock, &opcode, 1);
+	  if (ret == 0)
+	    goto retry;
 	  if (ret != 1 || opcode != OPCODE_SENDPORTS)
-	    std::cerr << "Invalid SENDPORTS opcode from boot node" << std::endl;
+	    std::cerr << "Invalid SENDPORTS opcode from boot node ret = " << ret << " opcode = " << opcode << std::endl;
 	  else
 	    bootnode_update(boot_sock);
 	  close(boot_sock);
+	  FD_CLR(boot_sock, &readset);
 	  boot_sock = 0;
 	  std::cerr << "Boot socket closed" << std::endl;
 	  continue;
@@ -859,12 +882,14 @@ void	  execute_worker(unsigned int numtxinblock, int difficulty,
 		    {
 		      std::cerr << "Error during client update" << std::endl;
 		      close(client_sock);
+		      FD_CLR(client_sock, &readset);
 		      it2 = it->second.clients.erase(it2);
 		    }
 		  else if (ret == 1)
 		    {
 		      std::cerr << "Removed client from worker clients list" << std::endl;
 		      close(client_sock);
+		      FD_CLR(client_sock, &readset);
 		      it2 = it->second.clients.erase(it2);
 		    }
 		  break;
@@ -878,7 +903,11 @@ void	  execute_worker(unsigned int numtxinblock, int difficulty,
 	    {
 	      ret = miner_update(it->second, miner_sock, numtxinblock);
 	      if (ret < 0)
-		FATAL("miner_update");
+		{
+		  close(miner_sock);
+		  FD_CLR(miner_sock, &readset);
+		  it->second.miner.sock = 0;
+		}
 	      break;
 	    }
 	}

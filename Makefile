@@ -1,4 +1,4 @@
-SRC = src/main.cpp src/bootstrap.cpp src/worker.cpp src/build.cpp src/hash.cpp
+SRC = src/main.cpp src/bootstrap.cpp src/worker.cpp src/build.cpp src/hash.cpp src/utils.cpp
 OBJ = $(SRC:.cpp=.o)
 EXE = node
 CC  = g++
