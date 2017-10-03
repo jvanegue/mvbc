@@ -584,7 +584,7 @@ static bool	chain_store(blockmsg_t msg, char *transdata, unsigned int numtxinblo
 	  pending_transpool.clear();
 	  newtop.hdr = msg;
 	  chain.push(newtop);
-	  std::cerr << "Accepted block on the chain - killed miner on the way " << std::endl;
+	  std::cerr << "Accepted block on the chain - killed miner pid " << miner.pid << " on the way " << std::endl;
 	}
       else
 	{
@@ -664,15 +664,11 @@ static int	client_update(int port, int client_sock, unsigned int numtxinblock, i
       // Send block opcode
     case OPCODE_SENDBLOCK:
       std::cerr << "SENDBLOCK OPCODE " << std::endl;
+      len = async_read(client_sock, (char *) &block, sizeof(block), "sendblock read (1)");
       transdata = (char *) malloc(numtxinblock * 128);
       if (transdata == NULL)
 	FATAL("SENDBLOCK malloc");
-      len = read(client_sock, (char *) &block, sizeof(block));
-      if (len < (int) sizeof(block))
-	FATAL("Not enough bytes in SENDBLOCK message");
-      len = read(client_sock, (char *) transdata, numtxinblock * 128);
-      if (len != (int) numtxinblock * 128)
-	FATAL("SENDBLOCK incomplete transdata read");      
+      len = async_read(client_sock, (char *) transdata, numtxinblock * 128, "sendblock read (2)");
       chain_store(block, transdata, numtxinblock, port);
       free(transdata);
       return (0);
@@ -681,7 +677,6 @@ static int	client_update(int port, int client_sock, unsigned int numtxinblock, i
       // Get block opcode
     case OPCODE_GETBLOCK:
       std::cerr << "GETBLOCK OPCODE " << std::endl;
-
       len = read(client_sock, blockheight, sizeof(blockheight));
       if (len != sizeof(blockheight))
 	FATAL("Not enough bytes in GETBLOCK message");
@@ -712,7 +707,7 @@ static int	client_update(int port, int client_sock, unsigned int numtxinblock, i
 
       
     default:
-      std::cerr << "INVALID OPCODE " << std::endl;
+      std::cerr << "INVALID OPCODE " << opcode << std::endl;
       return (0);
     }
   
@@ -817,6 +812,8 @@ void	  execute_worker(unsigned int numtxinblock, int difficulty,
 
       newworker.serv_sock = serv_sock;
       newworker.serv_port = port;
+      newworker.miner.pid = 0;
+      newworker.miner.sock = 0;
       workermap[port] = newworker;
 
       // Advertize new worker to bootstrap node

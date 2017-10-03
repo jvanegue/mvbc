@@ -165,3 +165,25 @@ int	async_send(int fd, char *buff, int len, const char *errstr)
     }
   return (len);
 }
+
+
+
+// Perform asynchronous read and retry until socket is ready
+int	async_read(int fd, char *buff, int len, const char *errstr)
+{
+  int	offset = 0;
+  
+ retry:
+  int rd = read(fd, buff + offset, len - offset);
+  if (rd < 0)
+    {
+      std::cerr << std::string(errstr) << " FAILED at reading data after " << offset << " bytes when expected was " << len << std::endl;
+      exit(-1);
+    }
+  if (rd != len - offset)
+    {
+      offset += rd;
+      goto retry;
+    }
+  return (len);
+}
