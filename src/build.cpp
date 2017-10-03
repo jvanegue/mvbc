@@ -1,8 +1,6 @@
 #include "node.h"
 
 // Build a SEND_PORT message
-
-
 char		*pack_sendport(bootmap_t portmap, int *len)
 {
   unsigned int	 mapsize = portmap.size();
