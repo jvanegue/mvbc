@@ -16,6 +16,10 @@ void			execute_bootstrap()
   if (boot_sock < 0)
     FATAL("socket");
 
+  int val = 1;
+  if (setsockopt(boot_sock, SOL_SOCKET, SO_REUSEADDR, &val, sizeof(int)) < 0)
+    FATAL("boot node: setsockopt SO_REUSEADDR failed");
+  
   addr.sin_family = AF_INET;
   addr.sin_port = htons(8888);
   addr.sin_addr.s_addr = INADDR_ANY;

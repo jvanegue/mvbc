@@ -201,12 +201,11 @@ static int		worker_update(int port)
   worker_t&		worker = workermap[port];
   socklen_t		clen;
 
-  std::cerr << "worker update: now accepting connection on port " << port << std::endl;
+  std::cerr << "worker update: now accepting connection on port "
+	    << port << " socket = " << worker.serv_sock << std::endl;
   
   int			csock = accept(worker.serv_sock, (struct sockaddr *) &client, &clen);
 
-  std::cerr << "worker update: accepted connection on port " << port << std::endl;
-  
   if (csock < 0)
     {
       if (errno == EAGAIN || errno == EWOULDBLOCK)
@@ -216,6 +215,9 @@ static int		worker_update(int port)
 	}
       FATAL("Failed accept on worker server socket");
     }
+
+  std::cerr << "worker update: accepted connection on port " << port << std::endl;
+  
   worker.clients.push_back(csock);
   workermap[port] = worker;
   return (0);
@@ -297,6 +299,8 @@ static int	miner_update(worker_t& worker, int sock, int numtxinblock)
 	  free(data);
 	  return (-1);
 	}
+
+      std::cerr << "Both sender and receiver are valid" << std::endl;
       
       account_t sender = utxomap[sender_key];
       account_t receiver = utxomap[receiver_key];      
@@ -484,7 +488,9 @@ static int	trans_verify(worker_t &worker,
     {
       std::cerr << "Received transaction with unknown sender - ignoring" << std::endl;
       return (0);
-    }  
+    }
+  std::cerr << "Transaction has known sender - continuing" << std::endl;    
+  
   sender = utxomap[mykey];
   mykey = hash_binary_to_string(trans.data.receiver);
   if (utxomap.find(mykey) == utxomap.end())
@@ -492,6 +498,8 @@ static int	trans_verify(worker_t &worker,
       std::cerr << "Received transaction with unknown receiver - ignoring" << std::endl;
       return (0);
     }
+  std::cerr << "Transaction has known receiver - continuing" << std::endl;    
+  
   receiver = utxomap[mykey];
   if (smaller_than(sender.amount, trans.data.amount))
     {
@@ -513,7 +521,9 @@ static int	trans_verify(worker_t &worker,
     {
       remote_t remote = it->second;
 
-      async_send(remote.client_sock, (char *) &trans, sizeof(transmsg_t), "Send transaction on remote");
+      async_send(remote.client_sock, (char *) &trans,
+		 sizeof(transmsg_t), "Send transaction on remote");
+      
       std::cerr << "Sent transaction to remote port " << remote.remote_port << std::endl;
     }
 
@@ -533,6 +543,8 @@ static int	trans_verify(worker_t &worker,
 	}
       transpool.clear();
     }
+  else
+    std::cerr << "Block is not FULL - keep listening" << std::endl;
   
   return (0);      
 }
@@ -732,9 +744,7 @@ void		UTXO_init()
       memset(buff, 0x00, sizeof(buff));
       len = snprintf(buff, sizeof(buff), "%u", predef);
       sha256((unsigned char*) buff, len, hash);
-      len = snprintf((char *) acc.amount, 32, "%032u", 100000);
-      if (len != 32)
-	FATAL("Failed to initialize amount with 32 chars");
+      memcpy(acc.amount, "00000000000000000000000000100000", 32);
       key = hash_binary_to_string(hash);
       utxomap[key] = acc;
     }
@@ -791,6 +801,10 @@ void	  execute_worker(unsigned int numtxinblock, int difficulty,
       if (serv_sock < 0)
 	FATAL("socket");
 
+      int val = 1;
+      if (setsockopt(serv_sock, SOL_SOCKET, SO_REUSEADDR, &val, sizeof(int)) < 0)
+	FATAL("worker serv_sock: setsockopt SO_REUSEADDR failed");
+      
       struct sockaddr_in saddr;
       int port = *it;
 
@@ -845,7 +859,8 @@ void	  execute_worker(unsigned int numtxinblock, int difficulty,
 	  if (ret == 0)
 	    goto retry;
 	  if (ret != 1 || opcode != OPCODE_SENDPORTS)
-	    std::cerr << "Invalid SENDPORTS opcode from boot node ret = " << ret << " opcode = " << opcode << std::endl;
+	    std::cerr << "Invalid SENDPORTS opcode from boot node ret = "
+		      << ret << " opcode = " << opcode << std::endl;
 	  else
 	    bootnode_update(boot_sock);
 	  close(boot_sock);

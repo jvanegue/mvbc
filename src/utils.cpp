@@ -24,18 +24,32 @@ bool	smaller_than(unsigned char first[32], unsigned char second[32])
 {
   int index;
 
+  std::string fst = tag2str(first);
+  std::string snd = tag2str(second);
+  
   for (index = 0; index < 32; index++)
     if (first[index] == second[index])
       continue;
     else if (first[index] < second[index])
-      return (true);
+      {
+	std::cerr << fst << " IS SMALLER THAN " << snd << std::endl;
+	return (true);
+      }
     else
-      return (false);      
+      {
+	std::cerr << fst << " IS NOT SMALLER THAN " << snd << std::endl;
+	return (false);
+      }
+
+  // Should never happen
+  std::cerr << "SMALL THAN: case should not happen - passing" << std::endl;
   return (false);
 }
 
 // Sub integers encoded with 32B arrays
-void	string_sub(unsigned char sender_amount[32], unsigned char amount_to_sub[32], unsigned char *output)
+void	string_sub(unsigned char sender_amount[32],
+		   unsigned char amount_to_sub[32],
+		   unsigned char *output)
 {
   unsigned char	carry = 0;
   for (int index = 31; index >= 0; index--)
@@ -100,7 +114,8 @@ void	wallet_print(const char *prefix,
   std::string		amount_str((const char *) amount_null);
   
   std::cerr << prefix_str << "SENDER AMOUNT " << sender_str
-	    << " to transfer " << amount_str << " to RECEIVER CURAMOUNT: " << receiver_str << std::endl;
+	    << " to transfer " << amount_str << " to RECEIVER CURAMOUNT: "
+	    << receiver_str << std::endl;
 }
 
 
