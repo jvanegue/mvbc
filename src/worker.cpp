@@ -280,9 +280,8 @@ static int	miner_update(worker_t& worker, int sock, int numtxinblock)
   // Update wallets amount values
   for (int idx = 0; idx < numtxinblock; idx++)
     {
-      transdata_t *curtrans = (transdata_t *) &data[idx];
+      transdata_t *curtrans = &((transdata_t *) data)[idx];
 
-      // typedef std::map<std::string,account_t> UTXO;
       std::string sender_key = hash_binary_to_string(curtrans->sender);
       std::string receiver_key = hash_binary_to_string(curtrans->receiver);
 
@@ -310,12 +309,13 @@ static int	miner_update(worker_t& worker, int sock, int numtxinblock)
       
       string_sub(sender.amount, curtrans->amount, result);
       string_add(receiver.amount, curtrans->amount, result2);
-
-      wallet_print("After transaction: ", sender.amount, curtrans->amount, receiver.amount);
-      
       memcpy(sender.amount, result, 32);
       memcpy(receiver.amount, result2, 32);
-    }
+      utxomap[sender_key] = sender;
+      utxomap[receiver_key] = receiver;
+      
+      wallet_print("After transaction: ", sender.amount, curtrans->amount, receiver.amount);
+     }
 
   // Close UNIX socket and zero miner pid
   close(worker.miner.sock);
@@ -557,81 +557,28 @@ static bool	chain_store(blockmsg_t msg, char *transdata, unsigned int numtxinblo
   int		newhd;
   char		newh[7];
 
-  memset(newh, 0x00, 7);
-  memcpy(newh, msg.height, 6);
-  newhd = atoi(newh);
-  if (chain.size() > 0)
+  if (chain.size() == 0)
     {
-      block_t	  top = chain.top();
-      blockmsg_t  topmsg = top.hdr;
-      char	  curh[7];
-      memset(curh, 0x00, 7);
-      memcpy(curh, topmsg.height, 6);
-      curhd = atoi(curh);
+      if (is_zero(msg.height))
+	return (chain_accept_block(msg, transdata, numtxinblock, port));
+      return (chain
     }
-  else
-    curhd = -1;
+  
+  block_t top = chain.top();
+  blockmsg_t tophdr = top.hdr;
 
-  // stale block - ignored.
-  if (curhd >= newhd)
-    {
-      std::cerr << "Received block of lower height : " << newhd
-		<< " current is " << curhd
-		<< " chain size = " << chain.size()
-		<< " -  ignoring" << std::endl;
-      return (true);
-    }
+  if (memcmp(msg.height, tophdr.height, 32) == 0 &&
+      memcmp(msg.priorhash, tophdr.priorhash, 32) == 0)
+    return (chain_merge_simple(msg, transdata, numtxinblock, top, port));
+  
+  if (smaller_than(msg.height, tophdr.height) &&
+      memcmp(msg.priorhash, tophdr.priorhash, 32) != 0)
+    return (chain_merge_deep(msg, transdata, numtxinblock, top, port));
 
-  // A block just above us - accept and synchronize
-  else if (curhd + 1 == newhd)
-    {
-      block_t   newtop;
-      miner_t&	miner = workermap[port].miner;
+  if (smaller_than(tophdr.height, msg.height))
+    return (chain_propagate_only(msg, transdata, numtxinblock, port));
 
-      // Kill any existing miner and push new block on chain
-      if (miner.pid)
-	{
-	  close(miner.sock);
-	  //FD_CLR(miner.sock, &readset); -- no readset here, is it an issue?
-	  miner.sock = 0;
-	  kill(miner.pid, SIGTERM);
-	  transpool.insert(pending_transpool.begin(), pending_transpool.end());
-	  pending_transpool.clear();
-	  newtop.hdr = msg;
-	  chain.push(newtop);
-	  std::cerr << "Accepted block on the chain - killed miner pid " << miner.pid << " on the way " << std::endl;
-	}
-      else
-	{
-	  newtop.hdr = msg;
-	  chain.push(newtop);
-	  std::cerr << "Accepted block on the chain - no miner was currently running" << std::endl;
-	}
-
-      // Remove all the transactions from the mempool that were already integrated via the new block
-      for (unsigned int idx = 0; idx < numtxinblock; idx++)
-	{
-	  transdata_t *curdata = ((transdata_t *) transdata) + idx;
-	  std::string transkey = hash_binary_to_string(curdata->sender) +
-	    hash_binary_to_string(curdata->receiver) +
-	    hash_binary_to_string(curdata->amount) +
-	    hash_binary_to_string(curdata->timestamp);
-	  
-	  if (transpool.find(transkey) != transpool.end())
-	    transpool.erase(transkey);	  
-	}
-
-      std::cerr << "CLEANED transpool after extending chain (" <<
-	transpool.size() << " trans left)" << std::endl;
-    }
-
-  // A block way above us - must retreive several blocks
-  else if (newhd > curhd + 1)
-    {
-      // FIXME: If new block is height is greater, use GET_BLOCK/GET_HASH to synchronize local chain
-      FATAL("Deep Forking not yet supported");
-    }
-
+  std::cerr << "ERROR: This should never happen in chain store" << std::endl;
   return (true);
 }
 

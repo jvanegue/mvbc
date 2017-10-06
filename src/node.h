@@ -140,3 +140,10 @@ void	wallet_print(const char *prefix, unsigned char sender[32],
 std::string	tag2str(unsigned char str[32]);
 int	async_send(int fd, char *buff, int len, const char *errstr);
 int	async_read(int fd, char *buff, int len, const char *errstr);
+
+bool	is_zero(unsigned char tag[32]);
+bool	chain_propagate_only(blockmsg_t msg, char *transdata, unsigned int numtxinblock, int port);
+bool	chain_merge_deep(blockmsg_t msg, char *transdata, unsigned int numtxinblock, block_t& top, int port);
+bool	chain_merge_single_block(blockmsg_t msg, char *transdata, unsigned int numtxinblock, block_t& top, int port);
+bool	chain_accept_block(blockmsg_t msg, char *transdata, unsigned int numtxinblock, int port);
+

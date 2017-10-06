@@ -19,6 +19,7 @@ std::string	hash_binary_to_string(unsigned char hash[32])
   return (key);
 }
 
+
 // Compare two integers stored on 32B arrays
 bool	smaller_than(unsigned char first[32], unsigned char second[32])
 {
@@ -45,6 +46,18 @@ bool	smaller_than(unsigned char first[32], unsigned char second[32])
   std::cerr << "SMALL THAN: case should not happen - passing" << std::endl;
   return (false);
 }
+
+
+// Return true if value is zero, false if not
+bool	is_zero(unsigned char tag[32])
+{
+  for (int idx = 0; idx < 32; idx++)
+    if (tag[idx] != '0')
+      return (false);
+  return (true);
+}
+
+
 
 // Sub integers encoded with 32B arrays
 void	string_sub(unsigned char sender_amount[32],
