@@ -563,7 +563,10 @@ static bool	chain_store(blockmsg_t msg, char *transdata, unsigned int numtxinblo
   // stale block - ignored.
   if (curhd >= newhd)
     {
-      std::cerr << "Received block of lower height - ignoring" << std::endl;
+      std::cerr << "Received block of lower height : " << newhd
+		<< " current is " << curhd
+		<< " chain size = " << chain.size()
+		<< " -  ignoring" << std::endl;
       return (true);
     }
 
@@ -614,7 +617,7 @@ static bool	chain_store(blockmsg_t msg, char *transdata, unsigned int numtxinblo
   else if (newhd > curhd + 1)
     {
       // FIXME: If new block is height is greater, use GET_BLOCK/GET_HASH to synchronize local chain
-      FATAL("Forking not yet supported");
+      FATAL("Deep Forking not yet supported");
     }
 
   return (true);
