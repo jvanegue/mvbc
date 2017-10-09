@@ -17,6 +17,7 @@
 #include <fcntl.h>
 #include <signal.h>
 #include <pthread.h>
+#include <time.h>
 
 // Types
 typedef struct __attribute__((packed, aligned(1))) bootmsg

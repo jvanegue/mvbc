@@ -33,7 +33,7 @@ int		trans_verify(worker_t &worker,
   account_t	sender;
   account_t	receiver;
 
-  std::cerr << "VERIFYing transaction" << std::endl;
+  //std::cerr << "VERIFYing transaction" << std::endl;
 
   if (trans_exists(trans))
     {
@@ -47,7 +47,7 @@ int		trans_verify(worker_t &worker,
       std::cerr << "Received transaction with unknown sender - ignoring" << std::endl;
       return (0);
     }
-  std::cerr << "Transaction has known sender - continuing" << std::endl;    
+  //std::cerr << "Transaction has known sender - continuing" << std::endl;    
   
   sender = utxomap[mykey];
   mykey = hash_binary_to_string(trans.data.receiver);
@@ -56,7 +56,7 @@ int		trans_verify(worker_t &worker,
       std::cerr << "Received transaction with unknown receiver - ignoring" << std::endl;
       return (0);
     }
-  std::cerr << "Transaction has known receiver - continuing" << std::endl;    
+  //std::cerr << "Transaction has known receiver - continuing" << std::endl;    
   
   receiver = utxomap[mykey];
   if (smaller_than(sender.amount, trans.data.amount))
@@ -72,7 +72,7 @@ int		trans_verify(worker_t &worker,
   
   transpool[transkey] = trans;
 
-  std::cerr << "Added transaction to mempool" << std::endl;
+  //std::cerr << "Added transaction to mempool" << std::endl;
   
   // Send transaction to all remotes
   for (clientmap_t::iterator it = clientmap.begin(); it != clientmap.end(); it++)
@@ -82,7 +82,7 @@ int		trans_verify(worker_t &worker,
       async_send(remote.client_sock, (char *) &trans,
 		 sizeof(transmsg_t), "Send transaction on remote");
       
-      std::cerr << "Sent transaction to remote port " << remote.remote_port << std::endl;
+      //std::cerr << "Sent transaction to remote port " << remote.remote_port << std::endl;
     }
 
   // Start mining if transpool contains enough transactions to make a block
@@ -93,8 +93,8 @@ int		trans_verify(worker_t &worker,
       pending_transpool.insert(transpool.begin(), transpool.end());
       transpool.clear();
     }
-  else
-    std::cerr << "Block is not FULL - keep listening" << std::endl;
+  //else
+  //std::cerr << "Block is not FULL - keep listening" << std::endl;
   
   return (0);      
 }
@@ -210,7 +210,7 @@ int		trans_exec(transdata_t *data, int numtxinblock, bool revert)
 	  continue;
 	}
 
-      std::cerr << "Both sender and receiver are valid" << std::endl;
+      //std::cerr << "Both sender and receiver are valid" << std::endl;
       
       account_t sender;
       account_t receiver;
@@ -228,7 +228,7 @@ int		trans_exec(transdata_t *data, int numtxinblock, bool revert)
       
       unsigned char result[32], result2[32];
 
-      wallet_print("Before transaction: ", sender.amount, curtrans->amount, receiver.amount);
+      //wallet_print("Before transaction: ", sender.amount, curtrans->amount, receiver.amount);
       
       string_sub(sender.amount, curtrans->amount, result);
       string_add(receiver.amount, curtrans->amount, result2);
@@ -246,7 +246,7 @@ int		trans_exec(transdata_t *data, int numtxinblock, bool revert)
 	  utxomap[receiver_key] = sender;
 	}
       
-      wallet_print("After transaction: ", sender.amount, curtrans->amount, receiver.amount);
+      //wallet_print("After transaction: ", sender.amount, curtrans->amount, receiver.amount);
       nbr++;
      }
   

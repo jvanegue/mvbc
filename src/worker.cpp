@@ -1,8 +1,11 @@
 #include "node.h"
 
+// These maps contains all the worker, clients and accounts
 workermap_t	workermap;
 clientmap_t	clientmap;
 UTXO		utxomap;
+
+// Current transaction pool, pending (mined) pool and past pool (already committed)
 mempool_t	transpool;
 mempool_t	pending_transpool;
 mempool_t	past_transpool;
@@ -10,9 +13,11 @@ mempool_t	past_transpool;
 // The block chain is also indexed in a map for faster access by height
 blockchain_t	chain;
 blockmap_t	bmap;
-
 pthread_mutex_t chain_lock = PTHREAD_MUTEX_INITIALIZER;
 
+// Some global timers for statistics purpose
+time_t		time_first_block = 0;
+time_t		time_last_block = 0;
 
 // Helper function to reset socket readset for select
 static int reset_readset(int boot_sock, fd_set *readset)
@@ -220,6 +225,8 @@ static int		worker_update(int port)
 	  FATAL("Failed accept on worker socket : EAGAIN/WOULDBLOCK");
 	  return (0);
 	}
+      
+      std::cerr << "Failure o accept on socket: " << worker.serv_sock << std::endl;
       FATAL("Failed accept on worker server socket");
     }
 
@@ -308,9 +315,24 @@ static int	miner_update(worker_t& worker, int sock, int numtxinblock)
   chain.push(chain_elem);
   std::string height = tag2str(newblock.height);
   bmap[height] = chain_elem;
-  
-  std::cerr << "Blockchain and Wallets updated! new current height = "
-	    << tag2str(newblock.height) << std::endl;
+
+  // Statistics on performance
+  time_t curtime;
+  time(&curtime);
+  if (time_first_block == 0)
+    time_first_block = curtime;
+  if (time_last_block == 0)
+    time_last_block = curtime;
+  double since_first_block = difftime(curtime, time_first_block); 
+  double since_last_block  = difftime(curtime, time_last_block);
+  time_last_block = curtime;
+  std::string curheight = tag2str(newblock.height);
+  std::cerr << "CHAIN/ACCOUNTS UPDATE : new current height = " << curheight
+	    << " on port " << worker.serv_port
+	    << " SEC_SINCE_LAST:  " << since_last_block
+	    << " SEC_SINCE_FIRST: " << since_first_block
+	    << std::endl;
+  std::cerr << "STATS:" << curheight << "," << since_first_block << std::endl;
 
   // Done updating the chain
   pthread_mutex_unlock(&chain_lock);
@@ -461,7 +483,7 @@ static int	client_update(int port, int client_sock, unsigned int numtxinblock, i
 
       // Send transaction opcode
     case OPCODE_SENDTRANS:
-      std::cerr << "SENDTRANS OPCODE " << std::endl;
+      //std::cerr << "SENDTRANS OPCODE " << std::endl;
       len = read(client_sock, (char *) &data, sizeof(data));
       if (len == 0)
 	{
