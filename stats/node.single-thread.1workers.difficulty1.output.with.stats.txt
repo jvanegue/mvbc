@@ -1,0 +1,429 @@
+Finished initializing UTXO
+Worker now binding server socket on port 11111
+Bootnode update!
+Received bytes on bootnode update: 48 48 48 48 48 49 
+Bootnode update: found numofport = 1
+PORT 11111 is a local worker - do not establish remote
+Boot socket closed
+worker update: now accepting connection on port 11111 socket = 4
+worker update: accepted connection on port 11111
+worker update: now accepting connection on port 11111 socket = 4
+worker update: accepted connection on port 11111
+worker update: now accepting connection on port 11111 socket = 4
+worker update: accepted connection on port 11111
+worker update: now accepting connection on port 11111 socket = 4
+worker update: accepted connection on port 11111
+worker update: now accepting connection on port 11111 socket = 4
+worker update: accepted connection on port 11111
+worker update: now accepting connection on port 11111 socket = 4
+worker update: accepted connection on port 11111
+worker update: now accepting connection on port 11111 socket = 4
+worker update: accepted connection on port 11111
+worker update: now accepting connection on port 11111 socket = 4
+worker update: accepted connection on port 11111
+worker update: now accepting connection on port 11111 socket = 4
+worker update: accepted connection on port 11111
+worker update: now accepting connection on port 11111 socket = 4
+worker update: accepted connection on port 11111
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+MINER UPDATE!
+MINER will exitMINER READ!
+
+Acquiring critical section for chain update...
+CHAIN/ACCOUNTS UPDATE : new current height = 00000000000000000000000000000000 on port 11111 SEC_SINCE_LAST:  0 SEC_SINCE_FIRST: 0
+STATS:00000000000000000000000000000000,0
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+MINER UPDATE!
+MINER will exitMINER READ!
+
+Acquiring critical section for chain update...
+CHAIN/ACCOUNTS UPDATE : new current height = 00000000000000000000000000000001 on port 11111 SEC_SINCE_LAST:  1 SEC_SINCE_FIRST: 1
+STATS:00000000000000000000000000000001,1
+Block is FULL 50000 - starting miner
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+MINER UPDATE!
+MINER will exitMINER READ!
+
+Acquiring critical section for chain update...
+CHAIN/ACCOUNTS UPDATE : new current height = 00000000000000000000000000000002 on port 11111 SEC_SINCE_LAST:  3 SEC_SINCE_FIRST: 4
+STATS:00000000000000000000000000000002,4
+Block is FULL 50000 - starting miner
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+MINER UPDATE!
+MINER will exitMINER READ!
+
+Acquiring critical section for chain update...
+CHAIN/ACCOUNTS UPDATE : new current height = 00000000000000000000000000000003 on port 11111 SEC_SINCE_LAST:  2 SEC_SINCE_FIRST: 6
+STATS:00000000000000000000000000000003,6
+Block is FULL 50000 - starting miner
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+WORKER on port 11111 MINED BLOCK!
+MINER UPDATE!
+MINER will exitMINER READ!
+
+Acquiring critical section for chain update...
+CHAIN/ACCOUNTS UPDATE : new current height = 00000000000000000000000000000004 on port 11111 SEC_SINCE_LAST:  3 SEC_SINCE_FIRST: 9
+STATS:00000000000000000000000000000004,9
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+MINER UPDATE!
+MINER will exit
+MINER READ!
+Acquiring critical section for chain update...
+CHAIN/ACCOUNTS UPDATE : new current height = 00000000000000000000000000000005 on port 11111 SEC_SINCE_LAST:  3 SEC_SINCE_FIRST: 12
+STATS:00000000000000000000000000000005,12
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+Block is FULL 50000 - starting miner
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+WORKER on port 11111 MINED BLOCK!
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+MINER UPDATE!
+MINER will exitMINER READ!
+
+Acquiring critical section for chain update...
+CHAIN/ACCOUNTS UPDATE : new current height = 00000000000000000000000000000006 on port 11111 SEC_SINCE_LAST:  5 SEC_SINCE_FIRST: 17
+STATS:00000000000000000000000000000006,17
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+Block is FULL 50000 - starting miner
+Block is FULL 50000 - starting miner
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+WORKER on port 11111 MINED BLOCK!
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+Block is FULL 50000 - starting miner
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+MINER UPDATE!
+MINER will exitMINER READ!
+
+Acquiring critical section for chain update...
+CHAIN/ACCOUNTS UPDATE : new current height = 00000000000000000000000000000007 on port 11111 SEC_SINCE_LAST:  11 SEC_SINCE_FIRST: 28
+STATS:00000000000000000000000000000007,28
+Block is FULL 50000 - starting miner
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+WORKER on port 11111 MINED BLOCK!
+WORKER on port 11111 MINED BLOCK!
+Block is FULL 50000 - starting miner
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+WORKER on port 11111 MINED BLOCK!
+WORKER on port 11111 MINED BLOCK!
+Block is FULL 50000 - starting miner
+Block is FULL 50000 - starting miner
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+WORKER on port 11111 MINED BLOCK!
+MINER UPDATE!
+MINER will exitMINER READ!
+
+Acquiring critical section for chain update...
+CHAIN/ACCOUNTS UPDATE : new current height = 00000000000000000000000000000008 on port 11111 SEC_SINCE_LAST:  12 SEC_SINCE_FIRST: 40
+STATS:00000000000000000000000000000008,40
+WORKER on port 11111 MINED BLOCK!
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+MINER UPDATE!
+MINER will exitMINER READ!
+
+Acquiring critical section for chain update...
+CHAIN/ACCOUNTS UPDATE : new current height = 00000000000000000000000000000009 on port 11111 SEC_SINCE_LAST:  1 SEC_SINCE_FIRST: 41
+STATS:00000000000000000000000000000009,41
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+MINER UPDATE!
+MINER will exitMINER READ!
+
+Acquiring critical section for chain update...
+CHAIN/ACCOUNTS UPDATE : new current height = 00000000000000000000000000000010 on port 11111 SEC_SINCE_LAST:  2 SEC_SINCE_FIRST: 43
+STATS:00000000000000000000000000000010,43
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+Block is FULL 50000 - starting miner
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+WORKER on port 11111 MINED BLOCK!
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+WORKER on port 11111 MINED BLOCK!
+MINER UPDATE!
+MINER will exitMINER READ!
+
+Acquiring critical section for chain update...
+CHAIN/ACCOUNTS UPDATE : new current height = 00000000000000000000000000000011 on port 11111 SEC_SINCE_LAST:  17 SEC_SINCE_FIRST: 60
+STATS:00000000000000000000000000000011,60
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+MINER UPDATE!
+MINER will exit
+MINER READ!
+WORKER on port 11111 MINED BLOCK!
+Acquiring critical section for chain update...
+CHAIN/ACCOUNTS UPDATE : new current height = 00000000000000000000000000000012 on port 11111 SEC_SINCE_LAST:  0 SEC_SINCE_FIRST: 60
+STATS:00000000000000000000000000000012,60
+Block is FULL 50000 - starting miner
+Block is FULL 50000 - starting miner
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+WORKER on port 11111 MINED BLOCK!
+MINER UPDATE!
+MINER will exitMINER READ!
+
+Acquiring critical section for chain update...
+CHAIN/ACCOUNTS UPDATE : new current height = 00000000000000000000000000000013 on port 11111 SEC_SINCE_LAST:  8 SEC_SINCE_FIRST: 68
+STATS:00000000000000000000000000000013,68
+WORKER on port 11111 MINED BLOCK!
+Block is FULL 50000 - starting miner
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+Block is FULL 50000 - starting miner
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+MINER UPDATE!
+MINER will exitMINER READ!
+
+Acquiring critical section for chain update...
+CHAIN/ACCOUNTS UPDATE : new current height = 00000000000000000000000000000014 on port 11111 SEC_SINCE_LAST:  5 SEC_SINCE_FIRST: 73
+STATS:00000000000000000000000000000014,73
+Block is FULL 50000 - starting miner
+Block is FULL 50000 - starting miner
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+MINER UPDATE!
+MINER will exitMINER READ!
+
+WORKER on port 11111 MINED BLOCK!
+Acquiring critical section for chain update...
+CHAIN/ACCOUNTS UPDATE : new current height = 00000000000000000000000000000015 on port 11111 SEC_SINCE_LAST:  6 SEC_SINCE_FIRST: 79
+STATS:00000000000000000000000000000015,79
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+MINER UPDATE!
+MINER will exitMINER READ!
+
+WORKER on port 11111 MINED BLOCK!
+Acquiring critical section for chain update...
+CHAIN/ACCOUNTS UPDATE : new current height = 00000000000000000000000000000016 on port 11111 SEC_SINCE_LAST:  1 SEC_SINCE_FIRST: 80
+STATS:00000000000000000000000000000016,80
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+MINER UPDATE!
+MINER will exitMINER READ!
+
+Acquiring critical section for chain update...
+CHAIN/ACCOUNTS UPDATE : new current height = 00000000000000000000000000000017 on port 11111 SEC_SINCE_LAST:  3 SEC_SINCE_FIRST: 83
+STATS:00000000000000000000000000000017,83
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+Block is FULL 50000 - starting miner
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+MINER UPDATE!
+MINER will exitMINER READ!
+
+Acquiring critical section for chain update...
+CHAIN/ACCOUNTS UPDATE : new current height = 00000000000000000000000000000018 on port 11111 SEC_SINCE_LAST:  3 SEC_SINCE_FIRST: 86
+STATS:00000000000000000000000000000018,86
+WORKER on port 11111 MINED BLOCK!
+WORKER on port 11111 MINED BLOCK!
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+MINER UPDATE!
+MINER READ!MINER will exit
+
+WORKER on port 11111 MINED BLOCK!
+Acquiring critical section for chain update...
+CHAIN/ACCOUNTS UPDATE : new current height = 00000000000000000000000000000019 on port 11111 SEC_SINCE_LAST:  2 SEC_SINCE_FIRST: 88
+STATS:00000000000000000000000000000019,88
+Block is FULL 50000 - starting miner
+Block is FULL 50000 - starting miner
+Block is FULL 50000 - starting miner
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+MINER UPDATE!
+MINER will exitMINER READ!
+
+WORKER on port 11111 MINED BLOCK!
+Acquiring critical section for chain update...
+CHAIN/ACCOUNTS UPDATE : new current height = 00000000000000000000000000000020 on port 11111 SEC_SINCE_LAST:  9 SEC_SINCE_FIRST: 97
+STATS:00000000000000000000000000000020,97
+WORKER on port 11111 MINED BLOCK!
+Block is FULL 50000 - starting miner
+Block is FULL 50000 - starting miner
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+MINER UPDATE!
+MINER will exit
+MINER READ!
+Acquiring critical section for chain update...
+CHAIN/ACCOUNTS UPDATE : new current height = 00000000000000000000000000000021 on port 11111 SEC_SINCE_LAST:  4 SEC_SINCE_FIRST: 101
+STATS:00000000000000000000000000000021,101
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+WORKER on port 11111 MINED BLOCK!
+WORKER on port 11111 MINED BLOCK!
+MINER UPDATE!
+MINER will exit
+MINER READ!
+Acquiring critical section for chain update...
+CHAIN/ACCOUNTS UPDATE : new current height = 00000000000000000000000000000022 on port 11111 SEC_SINCE_LAST:  3 SEC_SINCE_FIRST: 104
+STATS:00000000000000000000000000000022,104
+Block is FULL 50000 - starting miner
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+WORKER on port 11111 MINED BLOCK!
+Block is FULL 50000 - starting miner
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+WORKER on port 11111 MINED BLOCK!
+MINER UPDATE!
+MINER will exit
+MINER READ!
+Acquiring critical section for chain update...
+CHAIN/ACCOUNTS UPDATE : new current height = 00000000000000000000000000000023 on port 11111 SEC_SINCE_LAST:  5 SEC_SINCE_FIRST: 109
+STATS:00000000000000000000000000000023,109
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+MINER UPDATE!
+MINER will exit
+MINER READ!
+WORKER on port 11111 MINED BLOCK!
+Acquiring critical section for chain update...
+CHAIN/ACCOUNTS UPDATE : new current height = 00000000000000000000000000000024 on port 11111 SEC_SINCE_LAST:  1 SEC_SINCE_FIRST: 110
+STATS:00000000000000000000000000000024,110
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+MINER UPDATE!
+MINER will exitMINER READ!
+
+Acquiring critical section for chain update...
+CHAIN/ACCOUNTS UPDATE : new current height = 00000000000000000000000000000025 on port 11111 SEC_SINCE_LAST:  2 SEC_SINCE_FIRST: 112
+STATS:00000000000000000000000000000025,112
+Block is FULL 50000 - starting miner
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+MINER UPDATE!
+MINER will exitMINER READ!
+
+Acquiring critical section for chain update...
+CHAIN/ACCOUNTS UPDATE : new current height = 00000000000000000000000000000026 on port 11111 SEC_SINCE_LAST:  3 SEC_SINCE_FIRST: 115
+STATS:00000000000000000000000000000026,115
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+WORKER on port 11111 MINED BLOCK!
+MINER UPDATE!
+MINER will exitMINER READ!
+
+Acquiring critical section for chain update...
+CHAIN/ACCOUNTS UPDATE : new current height = 00000000000000000000000000000027 on port 11111 SEC_SINCE_LAST:  3 SEC_SINCE_FIRST: 118
+STATS:00000000000000000000000000000027,118
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+MINER UPDATE!
+MINER will exitMINER READ!
+
+Acquiring critical section for chain update...
+CHAIN/ACCOUNTS UPDATE : new current height = 00000000000000000000000000000028 on port 11111 SEC_SINCE_LAST:  1 SEC_SINCE_FIRST: 119
+STATS:00000000000000000000000000000028,119
+Removed client from worker clients list
+Block is FULL 50000 - starting miner
+Block is FULL 50000 - starting miner
+Block is FULL 50000 - starting miner
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+WORKER on port 11111 MINED BLOCK!
+MINER UPDATE!
+MINER will exitMINER READ!
+
+Acquiring critical section for chain update...
+CHAIN/ACCOUNTS UPDATE : new current height = 00000000000000000000000000000029 on port 11111 SEC_SINCE_LAST:  10 SEC_SINCE_FIRST: 129
+STATS:00000000000000000000000000000029,129
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+WORKER on port 11111 MINED BLOCK!
+Block is FULL 50000 - starting miner
+Block is FULL 50000 - starting miner
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+Removed client from worker clients list
+Block is FULL 50000 - starting miner
+Removed client from worker clients list
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+MINER UPDATE!
+MINER will exitMINER READ!
+
+WORKER on port 11111 MINED BLOCK!
+Acquiring critical section for chain update...
+CHAIN/ACCOUNTS UPDATE : new current height = 00000000000000000000000000000030 on port 11111 SEC_SINCE_LAST:  10 SEC_SINCE_FIRST: 139
+STATS:00000000000000000000000000000030,139
+WORKER on port 11111 MINED BLOCK!
+Removed client from worker clients list
+Block is FULL 50000 - starting miner
+Removed client from worker clients list
+Block is FULL 50000 - starting miner
+WORKER on port 11111 MINED BLOCK!
+WORKER on port 11111 MINED BLOCK!
+Removed client from worker clients list
+Block is FULL 50000 - starting miner
+Removed client from worker clients list
+Block is FULL 50000 - starting miner
+Removed client from worker clients list
+Removed client from worker clients list
+Block is FULL 50000 - starting miner
+Removed client from worker clients list
+WORKER on port 11111 MINED BLOCK!
+WORKER on port 11111 MINED BLOCK!
+WORKER on port 11111 MINED BLOCK!
+MINER UPDATE!
+MINER will exitMINER READ!
+
+Acquiring critical section for chain update...
+CHAIN/ACCOUNTS UPDATE : new current height = 00000000000000000000000000000031 on port 11111 SEC_SINCE_LAST:  11 SEC_SINCE_FIRST: 150
+STATS:00000000000000000000000000000031,150
+WORKER on port 11111 MINED BLOCK!
+WORKER on port 11111 MINED BLOCK!
