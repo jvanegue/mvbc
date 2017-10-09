@@ -121,6 +121,8 @@ typedef std::map<std::string,block_t> blockmap_t;
 typedef std::list<block_t>	 blocklist_t;
 typedef std::pair<blocklist_t,blocklist_t> blocklistpair_t;
 
+typedef std::list<pthread_t>	threadpool_t;
+
 // Defined
 #define OPCODE_SENDTRANS	'0'
 #define OPCODE_SENDBLOCK	'1'
@@ -135,7 +137,8 @@ typedef std::pair<blocklist_t,blocklist_t> blocklistpair_t;
 
 // Main functions 
 void		execute_bootstrap();
-void		execute_worker(unsigned int numtx, int difficulty, int num, std::list<int> ports);
+void		execute_worker(unsigned int numtx, int difficulty, int numworkers, int numcores,
+			       std::list<int> ports);
 
 // Utilities
 char		*pack_sendport(bootmap_t portmap, int *len);

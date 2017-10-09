@@ -19,6 +19,10 @@ pthread_mutex_t chain_lock = PTHREAD_MUTEX_INITIALIZER;
 time_t		time_first_block = 0;
 time_t		time_last_block = 0;
 
+// For multithread implementation
+threadpool_t	avail_threads;
+threadpool_t	busy_threads;
+
 // Helper function to reset socket readset for select
 static int reset_readset(int boot_sock, fd_set *readset)
 {
@@ -587,10 +591,9 @@ void		UTXO_init()
 }
 
 
-
 // Main procedure for node in worker mode
 void	  execute_worker(unsigned int numtxinblock, int difficulty,
-			 int numworkers, std::list<int> ports)
+			 int numworkers, int numcores, std::list<int> ports)
 {
   fd_set  readset;
   int	  err = 0;
@@ -604,7 +607,7 @@ void	  execute_worker(unsigned int numtxinblock, int difficulty,
 
   UTXO_init();
   FD_ZERO(&readset);
-
+  
   // Connect to bootstrap node
   boot_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
   if (boot_sock < 0)
