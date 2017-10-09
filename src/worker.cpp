@@ -6,6 +6,8 @@ UTXO		utxomap;
 mempool_t	transpool;
 mempool_t	pending_transpool;
 blockchain_t	chain;
+pthread_mutex_t chain_lock = PTHREAD_MUTEX_INITIALIZER;
+
 
 // Helper function to reset socket readset for select
 static int reset_readset(int boot_sock, fd_set *readset)
@@ -350,7 +352,7 @@ static int	do_mine(char *buff, int len, int difficulty, char *hash)
 
 
 // Perform the action of mining: 
-static int	do_mine_fork(worker_t &worker, int difficulty, int numtxinblock)
+int		do_mine_fork(worker_t &worker, int difficulty, int numtxinblock)
 {
   int		pipefd[2];
   pid_t		pid;
@@ -448,139 +450,6 @@ static int	do_mine_fork(worker_t &worker, int difficulty, int numtxinblock)
   return (0);
 }
 
-// Check if a transaction is already present in the mempool
-bool		trans_exists(transmsg_t trans)
-{
-  std::string	transkey;
-
-  transkey = hash_binary_to_string(trans.data.sender) +
-    hash_binary_to_string(trans.data.receiver) +
-    hash_binary_to_string(trans.data.amount) +
-    hash_binary_to_string(trans.data.timestamp);
-  
-  if (transpool.find(transkey) == transpool.end() &&
-      pending_transpool.find(transkey) == pending_transpool.end())
-    return (false);
-  
-  return (true);
-}
-
-
-// Verify transaction and add it to the pool if correct
-static int	trans_verify(worker_t &worker,
-			     transmsg_t trans,
-			     unsigned int numtxinblock,
-			     int difficulty)
-{
-  account_t	sender;
-  account_t	receiver;
-
-  std::cerr << "VERIFYing transaction" << std::endl;
-
-  if (trans_exists(trans))
-    {
-      std::cerr << "Transaction is already in mempool - ignoring" << std::endl;
-      return (0);
-    }
-  
-  std::string mykey = hash_binary_to_string(trans.data.sender);
-  if (utxomap.find(mykey) == utxomap.end())
-    {
-      std::cerr << "Received transaction with unknown sender - ignoring" << std::endl;
-      return (0);
-    }
-  std::cerr << "Transaction has known sender - continuing" << std::endl;    
-  
-  sender = utxomap[mykey];
-  mykey = hash_binary_to_string(trans.data.receiver);
-  if (utxomap.find(mykey) == utxomap.end())
-    {
-      std::cerr << "Received transaction with unknown receiver - ignoring" << std::endl;
-      return (0);
-    }
-  std::cerr << "Transaction has known receiver - continuing" << std::endl;    
-  
-  receiver = utxomap[mykey];
-  if (smaller_than(sender.amount, trans.data.amount))
-    {
-      std::cerr << "Received transaction with bankrupt sender - ignoring" << std::endl;
-      return (0);
-    }
-
-  std::string transkey = hash_binary_to_string(trans.data.sender) +
-    hash_binary_to_string(trans.data.receiver) +
-    hash_binary_to_string(trans.data.amount) +
-    hash_binary_to_string(trans.data.timestamp);
-  
-  transpool[transkey] = trans;
-
-  std::cerr << "Added transaction to mempool" << std::endl;
-  
-  // Send transaction to all remotes
-  for (clientmap_t::iterator it = clientmap.begin(); it != clientmap.end(); it++)
-    {
-      remote_t remote = it->second;
-
-      async_send(remote.client_sock, (char *) &trans,
-		 sizeof(transmsg_t), "Send transaction on remote");
-      
-      std::cerr << "Sent transaction to remote port " << remote.remote_port << std::endl;
-    }
-
-  // Start mining if transpool contains enough transactions to make a block
-  if (transpool.size() == numtxinblock)
-    {
-      std::cerr << "Block is FULL " << numtxinblock << " - starting miner" << std::endl;
-      do_mine_fork(worker, difficulty, numtxinblock);
-
-      pending_transpool.insert(transpool.begin(), transpool.end());
-
-      // After some time we forget the transactions...
-      if (pending_transpool.size() > numtxinblock * 5)
-	{
-	  pending_transpool.clear();
-	  pending_transpool.insert(transpool.begin(), transpool.end());
-	}
-      transpool.clear();
-    }
-  else
-    std::cerr << "Block is not FULL - keep listening" << std::endl;
-  
-  return (0);      
-}
-
-
-// Store new block in chain
-static bool	chain_store(blockmsg_t msg, char *transdata, unsigned int numtxinblock, int port)
-{
-  int		curhd;
-  int		newhd;
-  char		newh[7];
-
-  if (chain.size() == 0)
-    {
-      if (is_zero(msg.height))
-	return (chain_accept_block(msg, transdata, numtxinblock, port));
-      return (chain
-    }
-  
-  block_t top = chain.top();
-  blockmsg_t tophdr = top.hdr;
-
-  if (memcmp(msg.height, tophdr.height, 32) == 0 &&
-      memcmp(msg.priorhash, tophdr.priorhash, 32) == 0)
-    return (chain_merge_simple(msg, transdata, numtxinblock, top, port));
-  
-  if (smaller_than(msg.height, tophdr.height) &&
-      memcmp(msg.priorhash, tophdr.priorhash, 32) != 0)
-    return (chain_merge_deep(msg, transdata, numtxinblock, top, port));
-
-  if (smaller_than(tophdr.height, msg.height))
-    return (chain_propagate_only(msg, transdata, numtxinblock, port));
-
-  std::cerr << "ERROR: This should never happen in chain store" << std::endl;
-  return (true);
-}
 
 
 
@@ -632,7 +501,7 @@ static int	client_update(int port, int client_sock, unsigned int numtxinblock, i
 	FATAL("SENDBLOCK malloc");
       len = async_read(client_sock, (char *) transdata, numtxinblock * 128, "sendblock read (2)");
       chain_store(block, transdata, numtxinblock, port);
-      free(transdata);
+      //free(transdata); -- this is kept for roll back purpose 
       return (0);
       break;
 
