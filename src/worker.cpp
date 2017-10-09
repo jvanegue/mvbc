@@ -5,6 +5,7 @@ clientmap_t	clientmap;
 UTXO		utxomap;
 mempool_t	transpool;
 mempool_t	pending_transpool;
+mempool_t	past_transpool;
 blockchain_t	chain;
 pthread_mutex_t chain_lock = PTHREAD_MUTEX_INITIALIZER;
 
@@ -267,6 +268,7 @@ static int	miner_update(worker_t& worker, int sock, int numtxinblock)
   std::cerr << "MINER READ!" << std::endl;
   
   // Send block to all remotes
+  // This comes from a local miner so there is no verification to perform
   for (clientmap_t::iterator it = clientmap.begin(); it != clientmap.end(); it++)
     {
       remote_t	remote = it->second;
@@ -279,58 +281,33 @@ static int	miner_update(worker_t& worker, int sock, int numtxinblock)
       async_send(remote.client_sock, (char *) data, len, "Miner update 3");
     }
 
-  // Update wallets amount values
-  for (int idx = 0; idx < numtxinblock; idx++)
-    {
-      transdata_t *curtrans = &((transdata_t *) data)[idx];
+  // Make sure nobody can touch the chain while we execute transaction and stack new block
+  pthread_mutex_lock(&chain_lock);  
 
-      std::string sender_key = hash_binary_to_string(curtrans->sender);
-      std::string receiver_key = hash_binary_to_string(curtrans->receiver);
-
-      if (utxomap.find(sender_key) == utxomap.end())
-	{
-	  std::cerr << "Failed to find wallet by sender key - bad key encoding?" << std::endl;
-	  free(data);
-	  return (-1);
-	}
-
-      if (utxomap.find(receiver_key) == utxomap.end())
-	{
-	  std::cerr << "Failed to find wallet by receiver key - bad key encoding?" << std::endl;
-	  free(data);
-	  return (-1);
-	}
-
-      std::cerr << "Both sender and receiver are valid" << std::endl;
-      
-      account_t sender = utxomap[sender_key];
-      account_t receiver = utxomap[receiver_key];      
-      unsigned char result[32], result2[32];
-
-      wallet_print("Before transaction: ", sender.amount, curtrans->amount, receiver.amount);
-      
-      string_sub(sender.amount, curtrans->amount, result);
-      string_add(receiver.amount, curtrans->amount, result2);
-      memcpy(sender.amount, result, 32);
-      memcpy(receiver.amount, result2, 32);
-      utxomap[sender_key] = sender;
-      utxomap[receiver_key] = receiver;
-      
-      wallet_print("After transaction: ", sender.amount, curtrans->amount, receiver.amount);
-     }
+  // Transactions are marked as past instead of pending
+  past_transpool.insert(pending_transpool.begin(), pending_transpool.end());
+  pending_transpool.clear();
+  
+  // Execute all transactions of the block
+  trans_exec((transdata_t *) data, numtxinblock, false);
 
   // Close UNIX socket and zero miner pid
   close(worker.miner.sock);
   worker.miner.sock = 0;
 
-  block_t    chain_elem;
-
-  chain_elem.hdr = newblock;
-  chain.push(chain_elem);
-
-  free(data);
+  std::cerr << "Acquiring critical section for chain update..." << std::endl;
   
-  std::cerr << "Blockchain and Wallets updated! new current height = " << tag2str(newblock.height) << std::endl;
+  // Create block and push it on chain
+  block_t    chain_elem;
+  chain_elem.hdr = newblock;
+  chain_elem.trans = (transdata_t *) data;
+  chain.push(chain_elem);
+  
+  std::cerr << "Blockchain and Wallets updated! new current height = "
+	    << tag2str(newblock.height) << std::endl;
+
+  // Done updating the chain
+  pthread_mutex_unlock(&chain_lock);
   
   return (0);
 }

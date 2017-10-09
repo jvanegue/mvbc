@@ -3,11 +3,14 @@
 extern blockchain_t	chain;
 extern pthread_mutex_t  chain_lock;
 extern workermap_t	workermap;
+extern clientmap_t	clientmap;
 extern mempool_t	transpool;
 extern mempool_t	pending_transpool;
+extern mempool_t	past_transpool;
 
 // Obtain a block hash from one of the peers
-bool		worker_get_hash(worker_t& worker, unsigned char next_height[32], int numtxinblock, hashmsg_t& msg)
+bool		worker_get_hash(worker_t& worker, unsigned char next_height[32],
+				int numtxinblock, hashmsg_t& msg)
 {
   fd_set	fds;
   int		max;
@@ -43,14 +46,15 @@ bool		worker_get_hash(worker_t& worker, unsigned char next_height[32], int numtx
       }
     else if (ret != 0)
       {
-	for (std::list<int>::iterator it = worker.clients.begin(); it != worker.clients.end(); it++)
+	for (std::list<int>::iterator it = worker.clients.begin();
+	     it != worker.clients.end(); it++)
 	  {
 	    int sock = (*it);
 	    if (FD_ISSET(sock, &fds))
 	      {
 		int len = async_read(sock, (char *) found_hash, 32, 0);
 		if (len != 32)
-		  FATAL("unable to async read in chain find ancestor block");
+		  FATAL("get_hash: Unable to async read in chain find ancestor block");
 		nbr++;
 	      }
 	  }
@@ -60,24 +64,28 @@ bool		worker_get_hash(worker_t& worker, unsigned char next_height[32], int numtx
 
   // If we had no response from any worker, just drop
   if (nbr == 0)
-    return (false);
-
+    {
+      std::cerr << "get_hash: No response, just dropping block" << std::endl;
+      return (false);
+    }
+  
   // We had an answer but the hash differed from what expected
   block_t top = chain.top();
   if (memcmp(found_hash, top.hdr.hash, 32) != 0)
     {
-      std::cerr << "Found block at desired height but hash differed - continuing" << std::endl;
+      std::cerr << "get_hash: Found block at desired height but hash differed - cont" << std::endl;
       return (false);
     }
 
-  // We received an answer with the same hash as the expected!
-  std::cerr << "Found block at desired height with SAME hash!" << std::endl;
+  // We received an answer with the same hash as the expected
+  std::cerr << "get_hash: Found block at desired height with SAME hash!" << std::endl;
   return (true);
 }
 
 
 // Obtain a block data from one of the peers
-bool		worker_get_block(worker_t& worker, unsigned char next_height[32], int numtxinblock, block_t& block)
+bool		worker_get_block(worker_t& worker, unsigned char next_height[32],
+				 int numtxinblock, block_t& block)
 {
   fd_set	fds;
   int		max;
@@ -91,7 +99,7 @@ bool		worker_get_block(worker_t& worker, unsigned char next_height[32], int numt
       return (false);
     }
   
-  // Send message to ask for hash of ancestor
+  // Send message to ask for the block data at given height
   FD_ZERO(&fds);
   for (std::list<int>::iterator it = worker.clients.begin(); it != worker.clients.end(); it++)
     {
@@ -121,7 +129,8 @@ bool		worker_get_block(worker_t& worker, unsigned char next_height[32], int numt
       }
     else if (ret != 0)
       {
-	for (std::list<int>::iterator it = worker.clients.begin(); it != worker.clients.end(); it++)
+	for (std::list<int>::iterator it = worker.clients.begin();
+	     it != worker.clients.end(); it++)
 	  {
 	    int sock = (*it);
 	    if (FD_ISSET(sock, &fds))
@@ -150,8 +159,12 @@ bool		worker_get_block(worker_t& worker, unsigned char next_height[32], int numt
 
   // If we had no response from any worker, just drop
   if (nbr == 0)
-    return (false);
-
+    {
+      std::cerr << "get_block: No response " << std::endl;
+      free(transdata);
+      return (false);
+    }
+  
   block.hdr = hdr;
   block.trans = (transdata_t *) transdata;
   
@@ -159,7 +172,6 @@ bool		worker_get_block(worker_t& worker, unsigned char next_height[32], int numt
   std::cerr << "Found block data at desired height" << std::endl;
   return (true);
 }
-
 
 
 // Store new block in chain
@@ -191,7 +203,8 @@ bool		chain_store(blockmsg_t msg, char *transdata, unsigned int numtxinblock, in
 
 
 // Find common ancestor on block chain using GET_HASH requests
-bool			chain_sync(worker_t& worker, blockmsg_t newblock, unsigned int numtxinblock, blocklistpair_t& out)
+bool			chain_sync(worker_t& worker, blockmsg_t newblock,
+				   unsigned int numtxinblock, blocklistpair_t& out)
 {
   unsigned char		next_height[32];
   unsigned char		updated_height[32];
@@ -228,7 +241,8 @@ bool			chain_sync(worker_t& worker, blockmsg_t newblock, unsigned int numtxinblo
       // If no ancestor could be found, restore original chain and return error
       if (found == false)
 	{
-	  std::cerr << "Could not find hash of any ancestor block - dropping new block" << std::endl;
+	  std::cerr << "Could not find hash of any ancestor block - dropping new block"
+		    << std::endl;
 	  for (blocklist_t::iterator it = dropped.begin(); it != dropped.end(); it++)
 	    chain.push(*it);
 	  return (false);
@@ -242,7 +256,8 @@ bool			chain_sync(worker_t& worker, blockmsg_t newblock, unsigned int numtxinblo
       bool res = worker_get_block(worker, next_height, numtxinblock, ancestor_block);
       if (res == false)
 	{
-	  std::cerr << "Unable to obtain block data from known hash - dropping new block" << std::endl;
+	  std::cerr << "Unable to obtain block data from known hash - dropping new block"
+		    << std::endl;
 	  for (blocklist_t::iterator it = dropped.begin(); it != dropped.end(); it++)
 	    chain.push(*it);
 	  return (false);
@@ -269,7 +284,8 @@ bool			chain_sync(worker_t& worker, blockmsg_t newblock, unsigned int numtxinblo
 
 
 // This is what happens when the chain is currently empty and we accept a new block
-bool		chain_accept_block(blockmsg_t msg, char *transdata, unsigned int numtxinblock, int port)
+bool		chain_accept_block(blockmsg_t msg, char *transdata,
+				   unsigned int numtxinblock, int port)
 {
   block_t	newtop;
   miner_t&	miner = workermap[port].miner;
@@ -286,7 +302,8 @@ bool		chain_accept_block(blockmsg_t msg, char *transdata, unsigned int numtxinbl
       kill(miner.pid, SIGTERM);
       transpool.insert(pending_transpool.begin(), pending_transpool.end());
       pending_transpool.clear();
-      std::cerr << "Accepted block on the chain - killed miner pid " << miner.pid << " on the way " << std::endl;
+      std::cerr << "Accepted block on the chain - killed miner pid "
+		<< miner.pid << " on the way " << std::endl;
     }
   else
     {
@@ -321,7 +338,8 @@ bool		chain_accept_block(blockmsg_t msg, char *transdata, unsigned int numtxinbl
 
 
 // Fork at one level deep only - simple case
-bool		chain_merge_simple(blockmsg_t msg, char *transdata, unsigned int numtxinblock, block_t& top, int port)
+bool		chain_merge_simple(blockmsg_t msg, char *transdata,
+				   unsigned int numtxinblock, block_t& top, int port)
 {
   block_t	newtop;
   miner_t&	miner = workermap[port].miner;
@@ -338,11 +356,14 @@ bool		chain_merge_simple(blockmsg_t msg, char *transdata, unsigned int numtxinbl
       close(miner.sock);
       miner.sock = 0;
       kill(miner.pid, SIGTERM);
+
       transpool.insert(pending_transpool.begin(), pending_transpool.end());
       pending_transpool.clear();
+      
       newtop.hdr = msg;
       chain.push(newtop);
-      std::cerr << "Accepted block on the chain - killed miner pid " << miner.pid << " on the way " << std::endl;
+      std::cerr << "Accepted block on the chain - killed miner pid "
+		<< miner.pid << " on the way " << std::endl;
     }
   else
     {
@@ -363,7 +384,8 @@ bool		chain_merge_simple(blockmsg_t msg, char *transdata, unsigned int numtxinbl
 
 
 // Merge block chain were divergence was more than one block
-bool			chain_merge_deep(blockmsg_t msg, char *transdata, unsigned int numtxinblock, block_t& top, int port)
+bool			chain_merge_deep(blockmsg_t msg, char *transdata,
+					 unsigned int numtxinblock, block_t& top, int port)
 {
   worker_t&		worker = workermap[port];
   miner_t&		miner = worker.miner;
@@ -377,6 +399,8 @@ bool			chain_merge_deep(blockmsg_t msg, char *transdata, unsigned int numtxinblo
       close(miner.sock);
       miner.sock = 0;
       kill(miner.pid, SIGTERM);
+      transpool.insert(pending_transpool.begin(), pending_transpool.end());
+      pending_transpool.clear();
     }
 
   // There is no common ancestor - sync up with chain of sent block entirely
@@ -394,7 +418,8 @@ bool			chain_merge_deep(blockmsg_t msg, char *transdata, unsigned int numtxinblo
 
 
 // This block is old - check if any transaction of the block is legit, if so propagate it
-bool	chain_propagate_only(blockmsg_t msg, char *transdata, unsigned int numtxinblock, int port)
+bool	chain_propagate_only(blockmsg_t msg, char *transdata,
+			     unsigned int numtxinblock, int port)
 {
   block_t top = chain.top();
   blockmsg_t hdr = top.hdr;
@@ -406,8 +431,31 @@ bool	chain_propagate_only(blockmsg_t msg, char *transdata, unsigned int numtxinb
 	    << " chain size = " << chain.size()
 	    << " -  propagate only" << std::endl;
 
+  // If any of these transactions were already executed, send them over
+  for (unsigned int idx = 0; idx < numtxinblock; idx++)
+    {
+      transdata_t *curdata = ((transdata_t *) transdata) + idx;
+      
+      std::string transkey = hash_binary_to_string(curdata->sender) +
+	hash_binary_to_string(curdata->receiver) +
+	hash_binary_to_string(curdata->amount) +
+	hash_binary_to_string(curdata->timestamp);
+      
+      if (past_transpool.find(transkey) == past_transpool.end())
+	continue;
+      
+      for (clientmap_t::iterator it = clientmap.begin(); it != clientmap.end(); it++)
+	{
+	  remote_t remote = it->second;
 
-  // FIXME XXX: Propagate transaction that were legit, leave chain unchanged
+	  char opcode = OPCODE_SENDTRANS;
+	  async_send(remote.client_sock, &opcode, 1, "Propagate opcode on remote");
+	  async_send(remote.client_sock, (char *) curdata,
+		     sizeof(transmsg_t), "Propagate transaction on remote");
+	  
+	  std::cerr << "Propagated trans to remote port " << remote.remote_port << std::endl;
+	}
+    }
   
   return (true);
 }

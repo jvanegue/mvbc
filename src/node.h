@@ -156,7 +156,7 @@ int		async_read(int fd, char *buff, int len, const char *errstr);
 int		trans_sync(blocklist_t added, blocklist_t removed, unsigned int numtxinblock);
 bool		trans_exists(transmsg_t trans);
 int		trans_verify(worker_t &worker, transmsg_t trans, unsigned int numtxinblock, int difficulty);
-
+int		trans_exec(transdata_t *data, int numtxinblock, bool reverted);
 
 // Mining related functions
 int		do_mine_fork(worker_t &worker, int difficulty, int numtxinblock);
