@@ -6,7 +6,11 @@ UTXO		utxomap;
 mempool_t	transpool;
 mempool_t	pending_transpool;
 mempool_t	past_transpool;
+
+// The block chain is also indexed in a map for faster access by height
 blockchain_t	chain;
+blockmap_t	bmap;
+
 pthread_mutex_t chain_lock = PTHREAD_MUTEX_INITIALIZER;
 
 
@@ -302,6 +306,8 @@ static int	miner_update(worker_t& worker, int sock, int numtxinblock)
   chain_elem.hdr = newblock;
   chain_elem.trans = (transdata_t *) data;
   chain.push(chain_elem);
+  std::string height = tag2str(newblock.height);
+  bmap[height] = chain_elem;
   
   std::cerr << "Blockchain and Wallets updated! new current height = "
 	    << tag2str(newblock.height) << std::endl;
@@ -436,11 +442,13 @@ static int	client_update(int port, int client_sock, unsigned int numtxinblock, i
 {
   worker_t&	worker = workermap[port];
   char		blockheight[32];
+  std::string	height;
   transmsg_t	trans;
   transdata_t	data;
   unsigned char opcode;
   blockmsg_t	block;
   char		*transdata = NULL;
+  block_t	blk;
   
   int len = read(client_sock, &opcode, 1);
   if (len == 0)
@@ -478,7 +486,6 @@ static int	client_update(int port, int client_sock, unsigned int numtxinblock, i
 	FATAL("SENDBLOCK malloc");
       len = async_read(client_sock, (char *) transdata, numtxinblock * 128, "sendblock read (2)");
       chain_store(block, transdata, numtxinblock, port);
-      //free(transdata); -- this is kept for roll back purpose 
       return (0);
       break;
 
@@ -488,10 +495,16 @@ static int	client_update(int port, int client_sock, unsigned int numtxinblock, i
       len = read(client_sock, blockheight, sizeof(blockheight));
       if (len != sizeof(blockheight))
 	FATAL("Not enough bytes in GETBLOCK message");
-
-      // FIXME: send content of that block if it exists
-      std::cerr << "UNIMPLEMENTED: GETBLOCK" << std::endl;
-      exit(-1);
+      height = tag2str((unsigned char *) blockheight);
+      if (bmap.find(height) == bmap.end())
+	{
+	  std::cerr << "GETBLOCK: Did not find block at desired height" << std::endl;
+	  return (0);
+	}
+      blk = bmap[height];
+      async_send(client_sock, (char *) &blk.hdr, sizeof(blk.hdr), "GETBLOCK send 1");
+      async_send(client_sock, (char *) blk.trans, sizeof(transdata_t) * numtxinblock,
+		 "GETBLOCK send 2");
       break;
 
       // Get hash opcode
@@ -500,10 +513,14 @@ static int	client_update(int port, int client_sock, unsigned int numtxinblock, i
       len = read(client_sock, blockheight, sizeof(blockheight));
       if (len != sizeof(blockheight))
 	FATAL("Not enough bytes in GETBLOCK message");
-
-      // FIXME: send back the hash of that block if it exists
-      std::cerr << "UNIMPLEMENTED: GETHASH" << std::endl;
-      exit(-1);
+      height = tag2str((unsigned char *) blockheight);
+      if (bmap.find(height) == bmap.end())
+	{
+	  std::cerr << "GETHASH: Did not find block at desired height" << std::endl;
+	  return (0);
+	}
+      blk = bmap[height];
+      async_send(client_sock, (char *) blk.hdr.hash, 32, "GETHASH send");
       break;
 
       // Send ports opcode (only sent via boot node generally)
@@ -513,7 +530,6 @@ static int	client_update(int port, int client_sock, unsigned int numtxinblock, i
       return (1);
       break;
 
-      
     default:
       std::cerr << "INVALID OPCODE " << opcode << std::endl;
       return (0);

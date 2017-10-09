@@ -1,5 +1,6 @@
 #include "node.h"
 
+extern blockmap_t	bmap;
 extern blockchain_t	chain;
 extern pthread_mutex_t  chain_lock;
 extern workermap_t	workermap;
@@ -234,8 +235,12 @@ bool			chain_sync(worker_t& worker, blockmsg_t newblock,
 	      string_sub(next_height, one, updated_height);
 	      memcpy(next_height, updated_height, 32);
 	    }
-	  dropped.push_front(chain.top());
+
+	  block_t top = chain.top();
+	  dropped.push_front(top);
 	  chain.pop();
+	  std::string height = tag2str(top.hdr.height);
+	  bmap.erase(height);
 	}
       
       // If no ancestor could be found, restore original chain and return error
@@ -244,7 +249,12 @@ bool			chain_sync(worker_t& worker, blockmsg_t newblock,
 	  std::cerr << "Could not find hash of any ancestor block - dropping new block"
 		    << std::endl;
 	  for (blocklist_t::iterator it = dropped.begin(); it != dropped.end(); it++)
-	    chain.push(*it);
+	    {
+	      block_t& cur = *it;
+	      chain.push(cur);
+	      std::string height = tag2str(cur.hdr.height);
+	      bmap[height] = cur;
+	    }
 	  return (false);
 	}
     }
@@ -259,7 +269,12 @@ bool			chain_sync(worker_t& worker, blockmsg_t newblock,
 	  std::cerr << "Unable to obtain block data from known hash - dropping new block"
 		    << std::endl;
 	  for (blocklist_t::iterator it = dropped.begin(); it != dropped.end(); it++)
-	    chain.push(*it);
+	    {
+	      block_t& cur = *it;
+	      chain.push(cur);
+	      std::string height = tag2str(cur.hdr.height);
+	      bmap[height] = cur;
+	    }
 	  return (false);
 	}
       added.push_back(ancestor_block);
@@ -274,7 +289,12 @@ bool			chain_sync(worker_t& worker, blockmsg_t newblock,
 
   // We found all the blocks until the top. Push added blocks to the chain
   for (blocklist_t::iterator it = added.begin(); it != added.end(); it++)
-    chain.push(*it); 
+    {
+      block_t& cur = *it;
+      chain.push(cur);
+      std::string height = tag2str(cur.hdr.height);
+      bmap[height] = cur;
+    }
   
   std::cerr << "Succesfully synced chain" << std::endl;
   blocklistpair_t lout = std::make_pair(added, dropped);
@@ -316,6 +336,9 @@ bool		chain_accept_block(blockmsg_t msg, char *transdata,
       newtop.hdr = msg;
       newtop.trans = (transdata_t *) transdata;
       chain.push(newtop);
+      std::string height = tag2str(newtop.hdr.height);
+      bmap[height] = newtop;
+      
       synced.push_back(newtop);
       bp = std::make_pair(synced, removed);
     }
@@ -347,8 +370,11 @@ bool		chain_merge_simple(blockmsg_t msg, char *transdata,
   std::cerr << "ENTERED chain merge simple" << std::endl;
   
   // This is the caase where the new block is at the same height as the top block in our chain
-  // We must first pop the current block, push the new one, and settle all pending transactions between the two blocks 
+  // We must first pop the current block, push the new one, and settle all pending transactions between the two blocks
+  block_t oldtop = chain.top();
   chain.pop();
+  std::string height = tag2str(oldtop.hdr.height);
+  bmap.erase(height);
   
   // Kill any existing miner and push new block on chain
   if (miner.pid)
@@ -361,7 +387,11 @@ bool		chain_merge_simple(blockmsg_t msg, char *transdata,
       pending_transpool.clear();
       
       newtop.hdr = msg;
+      
       chain.push(newtop);
+      std::string height = tag2str(newtop.hdr.height);
+      bmap[height] = newtop;
+      
       std::cerr << "Accepted block on the chain - killed miner pid "
 		<< miner.pid << " on the way " << std::endl;
     }
@@ -369,6 +399,9 @@ bool		chain_merge_simple(blockmsg_t msg, char *transdata,
     {
       newtop.hdr = msg;
       chain.push(newtop);
+      std::string height = tag2str(newtop.hdr.height);
+      bmap[height] = newtop;
+      
       std::cerr << "Accepted block on the chain - no miner was currently running" << std::endl;
     }
 
@@ -459,4 +492,3 @@ bool	chain_propagate_only(blockmsg_t msg, char *transdata,
   
   return (true);
 }
-

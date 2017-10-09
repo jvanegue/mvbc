@@ -113,7 +113,10 @@ typedef std::map<int, worker_t>  workermap_t;
 typedef std::map<int, miner_t>   minermap_t;
 typedef std::map<std::string,account_t> UTXO;
 typedef std::map<std::string,transmsg_t> mempool_t;
+
 typedef std::stack<block_t>	 blockchain_t;
+typedef std::map<std::string,block_t> blockmap_t;
+
 typedef std::list<block_t>	 blocklist_t;
 typedef std::pair<blocklist_t,blocklist_t> blocklistpair_t;
 
