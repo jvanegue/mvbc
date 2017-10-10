@@ -33,12 +33,12 @@ bool	smaller_than(unsigned char first[32], unsigned char second[32])
       continue;
     else if (first[index] < second[index])
       {
-	std::cerr << fst << " IS SMALLER THAN " << snd << std::endl;
+	//std::cerr << fst << " IS SMALLER THAN " << snd << std::endl;
 	return (true);
       }
     else
       {
-	std::cerr << fst << " IS NOT SMALLER THAN " << snd << std::endl;
+	//std::cerr << fst << " IS NOT SMALLER THAN " << snd << std::endl;
 	return (false);
       }
 
@@ -102,6 +102,7 @@ std::string	tag2str(unsigned char str[32])
   return (realstr);
 
 }
+
 
 // Print wallet information
 void	wallet_print(const char *prefix,

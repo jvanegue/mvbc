@@ -3,6 +3,7 @@
 // global variables
 bool		bootstrap = false;
 unsigned int	numworkers = 0;
+unsigned int	numcores = 0;
 std::list<int>	ports;
 int		difficulty = 1;
 int		numtxinblock = DEFAULT_TRANS_PER_BLOCK;
@@ -11,7 +12,7 @@ int		numtxinblock = DEFAULT_TRANS_PER_BLOCK;
 void help_and_exit(std::string msg, char *str)
 {
   std::cerr << "Error : " << msg << std::endl;
-  std::cerr << "Syntax: " << std::string(str) << " [-bootstrap | -numtxinblock <num> -numworkers <num> -ports <ports> -difficulty <num>]"
+  std::cerr << "Syntax: " << std::string(str) << " [-bootstrap | -numtxinblock <num> -numworkers <num> -ports <ports> -difficulty <num> -numcores <num>]"
 	    << std::endl;
   exit(-1);
 }
@@ -24,6 +25,7 @@ int parse(int argc, char **argv)
   bool portmode = false;
   bool numtxmode = false;
   bool difficultymode = false;
+  bool numcoresmode = false;
   char *str = NULL;
   
   while (index < argc)
@@ -33,22 +35,32 @@ int parse(int argc, char **argv)
 	{
 	  bootstrap = true;
 	  return (0);
-	}
+	}      
       else if (!strcmp(str, "-numtxinblock"))
 	{
 	  portmode = false;
-	  if (numworkermode || difficultymode)
+	  if (numworkermode || difficultymode || numcoresmode)
 	    help_and_exit("Missing parameter value", argv[0]);
 	  if (numtxmode)
 	    help_and_exit("Multiple occurences of option is invalid", argv[0]);
 	  numtxmode = true;
 	}
+      else if (!strcmp(str, "-numcores"))
+	{
+	  portmode = false;
+	  if (numworkermode || difficultymode || numtxmode)
+	    help_and_exit("Missing parameter value", argv[0]);
+	  if (numtxmode)
+	    help_and_exit("Multiple occurences of option is invalid", argv[0]);
+	  numcoresmode = true;
+	}
+      
       else if (!strcmp(str, "-numworkers"))
 	{
 	  portmode = false;
 	  if (numworkers != 0 || numworkermode)
 	    help_and_exit("Multiple occurences of option is invalid", argv[0]);
-	  if (numtxmode || difficultymode)
+	  if (numtxmode || difficultymode || numcoresmode)
 	    help_and_exit("Invalid parameter", argv[0]);
 	  numworkermode = true;
 	}
@@ -56,7 +68,7 @@ int parse(int argc, char **argv)
 	{
 	  if (ports.size() != 0 || portmode)
 	    help_and_exit("Multiple occurences of option is invalid", argv[0]);
-	  if (numworkermode || numtxmode || difficultymode)
+	  if (numworkermode || numtxmode || difficultymode || numcoresmode)
 	    help_and_exit("Invalid parameter", argv[0]);
 	  portmode = true;
 	}
@@ -65,7 +77,7 @@ int parse(int argc, char **argv)
 	  portmode = false;
 	  if (difficultymode)
 	    help_and_exit("Multiple occurences of option is invalid", argv[0]);
-	  if (numworkermode || numtxmode)
+	  if (numworkermode || numtxmode || numcoresmode)
 	    help_and_exit("Invalid parameter", argv[0]);
 	  difficultymode = true;
 	}
@@ -89,6 +101,11 @@ int parse(int argc, char **argv)
 	      numtxinblock = num;
 	      numtxmode = false;
 	    }
+	  else if (numcoresmode)
+	    {
+	      numcores = num;
+	      numcoresmode = false;
+	    }
 	  else
 	    help_and_exit("Missing option for value", argv[0]);
 	}
@@ -111,6 +128,6 @@ int main(int argc, char **argv)
   if (bootstrap)
     execute_bootstrap();
   else
-    execute_worker(numtxinblock, difficulty, numworkers, ports);
+    execute_worker(numtxinblock, difficulty, numworkers, numcores, ports);
   return (0);
 }

@@ -17,6 +17,7 @@
 #include <fcntl.h>
 #include <signal.h>
 #include <pthread.h>
+#include <time.h>
 
 // Types
 typedef struct __attribute__((packed, aligned(1))) bootmsg
@@ -113,9 +114,14 @@ typedef std::map<int, worker_t>  workermap_t;
 typedef std::map<int, miner_t>   minermap_t;
 typedef std::map<std::string,account_t> UTXO;
 typedef std::map<std::string,transmsg_t> mempool_t;
+
 typedef std::stack<block_t>	 blockchain_t;
+typedef std::map<std::string,block_t> blockmap_t;
+
 typedef std::list<block_t>	 blocklist_t;
 typedef std::pair<blocklist_t,blocklist_t> blocklistpair_t;
+
+typedef std::list<pthread_t>	threadpool_t;
 
 // Defined
 #define OPCODE_SENDTRANS	'0'
@@ -131,7 +137,8 @@ typedef std::pair<blocklist_t,blocklist_t> blocklistpair_t;
 
 // Main functions 
 void		execute_bootstrap();
-void		execute_worker(unsigned int numtx, int difficulty, int num, std::list<int> ports);
+void		execute_worker(unsigned int numtx, int difficulty, int numworkers, int numcores,
+			       std::list<int> ports);
 
 // Utilities
 char		*pack_sendport(bootmap_t portmap, int *len);
@@ -156,7 +163,7 @@ int		async_read(int fd, char *buff, int len, const char *errstr);
 int		trans_sync(blocklist_t added, blocklist_t removed, unsigned int numtxinblock);
 bool		trans_exists(transmsg_t trans);
 int		trans_verify(worker_t &worker, transmsg_t trans, unsigned int numtxinblock, int difficulty);
-
+int		trans_exec(transdata_t *data, int numtxinblock, bool reverted);
 
 // Mining related functions
 int		do_mine_fork(worker_t &worker, int difficulty, int numtxinblock);

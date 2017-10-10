@@ -1,13 +1,27 @@
 #include "node.h"
 
+// These maps contains all the worker, clients and accounts
 workermap_t	workermap;
 clientmap_t	clientmap;
 UTXO		utxomap;
+
+// Current transaction pool, pending (mined) pool and past pool (already committed)
 mempool_t	transpool;
 mempool_t	pending_transpool;
+mempool_t	past_transpool;
+
+// The block chain is also indexed in a map for faster access by height
 blockchain_t	chain;
+blockmap_t	bmap;
 pthread_mutex_t chain_lock = PTHREAD_MUTEX_INITIALIZER;
 
+// Some global timers for statistics purpose
+time_t		time_first_block = 0;
+time_t		time_last_block = 0;
+
+// For multithread implementation
+threadpool_t	avail_threads;
+threadpool_t	busy_threads;
 
 // Helper function to reset socket readset for select
 static int reset_readset(int boot_sock, fd_set *readset)
@@ -215,6 +229,8 @@ static int		worker_update(int port)
 	  FATAL("Failed accept on worker socket : EAGAIN/WOULDBLOCK");
 	  return (0);
 	}
+      
+      std::cerr << "Failure o accept on socket: " << worker.serv_sock << std::endl;
       FATAL("Failed accept on worker server socket");
     }
 
@@ -267,6 +283,7 @@ static int	miner_update(worker_t& worker, int sock, int numtxinblock)
   std::cerr << "MINER READ!" << std::endl;
   
   // Send block to all remotes
+  // This comes from a local miner so there is no verification to perform
   for (clientmap_t::iterator it = clientmap.begin(); it != clientmap.end(); it++)
     {
       remote_t	remote = it->second;
@@ -279,58 +296,50 @@ static int	miner_update(worker_t& worker, int sock, int numtxinblock)
       async_send(remote.client_sock, (char *) data, len, "Miner update 3");
     }
 
-  // Update wallets amount values
-  for (int idx = 0; idx < numtxinblock; idx++)
-    {
-      transdata_t *curtrans = &((transdata_t *) data)[idx];
+  // Make sure nobody can touch the chain while we execute transaction and stack new block
+  pthread_mutex_lock(&chain_lock);  
 
-      std::string sender_key = hash_binary_to_string(curtrans->sender);
-      std::string receiver_key = hash_binary_to_string(curtrans->receiver);
-
-      if (utxomap.find(sender_key) == utxomap.end())
-	{
-	  std::cerr << "Failed to find wallet by sender key - bad key encoding?" << std::endl;
-	  free(data);
-	  return (-1);
-	}
-
-      if (utxomap.find(receiver_key) == utxomap.end())
-	{
-	  std::cerr << "Failed to find wallet by receiver key - bad key encoding?" << std::endl;
-	  free(data);
-	  return (-1);
-	}
-
-      std::cerr << "Both sender and receiver are valid" << std::endl;
-      
-      account_t sender = utxomap[sender_key];
-      account_t receiver = utxomap[receiver_key];      
-      unsigned char result[32], result2[32];
-
-      wallet_print("Before transaction: ", sender.amount, curtrans->amount, receiver.amount);
-      
-      string_sub(sender.amount, curtrans->amount, result);
-      string_add(receiver.amount, curtrans->amount, result2);
-      memcpy(sender.amount, result, 32);
-      memcpy(receiver.amount, result2, 32);
-      utxomap[sender_key] = sender;
-      utxomap[receiver_key] = receiver;
-      
-      wallet_print("After transaction: ", sender.amount, curtrans->amount, receiver.amount);
-     }
+  // Transactions are marked as past instead of pending
+  past_transpool.insert(pending_transpool.begin(), pending_transpool.end());
+  pending_transpool.clear();
+  
+  // Execute all transactions of the block
+  trans_exec((transdata_t *) data, numtxinblock, false);
 
   // Close UNIX socket and zero miner pid
   close(worker.miner.sock);
   worker.miner.sock = 0;
 
-  block_t    chain_elem;
-
-  chain_elem.hdr = newblock;
-  chain.push(chain_elem);
-
-  free(data);
+  std::cerr << "Acquiring critical section for chain update..." << std::endl;
   
-  std::cerr << "Blockchain and Wallets updated! new current height = " << tag2str(newblock.height) << std::endl;
+  // Create block and push it on chain
+  block_t    chain_elem;
+  chain_elem.hdr = newblock;
+  chain_elem.trans = (transdata_t *) data;
+  chain.push(chain_elem);
+  std::string height = tag2str(newblock.height);
+  bmap[height] = chain_elem;
+
+  // Statistics on performance
+  time_t curtime;
+  time(&curtime);
+  if (time_first_block == 0)
+    time_first_block = curtime;
+  if (time_last_block == 0)
+    time_last_block = curtime;
+  double since_first_block = difftime(curtime, time_first_block); 
+  double since_last_block  = difftime(curtime, time_last_block);
+  time_last_block = curtime;
+  std::string curheight = tag2str(newblock.height);
+  std::cerr << "CHAIN/ACCOUNTS UPDATE : new current height = " << curheight
+	    << " on port " << worker.serv_port
+	    << " SEC_SINCE_LAST:  " << since_last_block
+	    << " SEC_SINCE_FIRST: " << since_first_block
+	    << std::endl;
+  std::cerr << "STATS:" << curheight << "," << since_first_block << std::endl;
+
+  // Done updating the chain
+  pthread_mutex_unlock(&chain_lock);
   
   return (0);
 }
@@ -459,11 +468,13 @@ static int	client_update(int port, int client_sock, unsigned int numtxinblock, i
 {
   worker_t&	worker = workermap[port];
   char		blockheight[32];
+  std::string	height;
   transmsg_t	trans;
   transdata_t	data;
   unsigned char opcode;
   blockmsg_t	block;
   char		*transdata = NULL;
+  block_t	blk;
   
   int len = read(client_sock, &opcode, 1);
   if (len == 0)
@@ -476,7 +487,7 @@ static int	client_update(int port, int client_sock, unsigned int numtxinblock, i
 
       // Send transaction opcode
     case OPCODE_SENDTRANS:
-      std::cerr << "SENDTRANS OPCODE " << std::endl;
+      //std::cerr << "SENDTRANS OPCODE " << std::endl;
       len = read(client_sock, (char *) &data, sizeof(data));
       if (len == 0)
 	{
@@ -501,7 +512,6 @@ static int	client_update(int port, int client_sock, unsigned int numtxinblock, i
 	FATAL("SENDBLOCK malloc");
       len = async_read(client_sock, (char *) transdata, numtxinblock * 128, "sendblock read (2)");
       chain_store(block, transdata, numtxinblock, port);
-      //free(transdata); -- this is kept for roll back purpose 
       return (0);
       break;
 
@@ -511,10 +521,16 @@ static int	client_update(int port, int client_sock, unsigned int numtxinblock, i
       len = read(client_sock, blockheight, sizeof(blockheight));
       if (len != sizeof(blockheight))
 	FATAL("Not enough bytes in GETBLOCK message");
-
-      // FIXME: send content of that block if it exists
-      std::cerr << "UNIMPLEMENTED: GETBLOCK" << std::endl;
-      exit(-1);
+      height = tag2str((unsigned char *) blockheight);
+      if (bmap.find(height) == bmap.end())
+	{
+	  std::cerr << "GETBLOCK: Did not find block at desired height" << std::endl;
+	  return (0);
+	}
+      blk = bmap[height];
+      async_send(client_sock, (char *) &blk.hdr, sizeof(blk.hdr), "GETBLOCK send 1");
+      async_send(client_sock, (char *) blk.trans, sizeof(transdata_t) * numtxinblock,
+		 "GETBLOCK send 2");
       break;
 
       // Get hash opcode
@@ -523,10 +539,14 @@ static int	client_update(int port, int client_sock, unsigned int numtxinblock, i
       len = read(client_sock, blockheight, sizeof(blockheight));
       if (len != sizeof(blockheight))
 	FATAL("Not enough bytes in GETBLOCK message");
-
-      // FIXME: send back the hash of that block if it exists
-      std::cerr << "UNIMPLEMENTED: GETHASH" << std::endl;
-      exit(-1);
+      height = tag2str((unsigned char *) blockheight);
+      if (bmap.find(height) == bmap.end())
+	{
+	  std::cerr << "GETHASH: Did not find block at desired height" << std::endl;
+	  return (0);
+	}
+      blk = bmap[height];
+      async_send(client_sock, (char *) blk.hdr.hash, 32, "GETHASH send");
       break;
 
       // Send ports opcode (only sent via boot node generally)
@@ -536,7 +556,6 @@ static int	client_update(int port, int client_sock, unsigned int numtxinblock, i
       return (1);
       break;
 
-      
     default:
       std::cerr << "INVALID OPCODE " << opcode << std::endl;
       return (0);
@@ -572,10 +591,9 @@ void		UTXO_init()
 }
 
 
-
 // Main procedure for node in worker mode
 void	  execute_worker(unsigned int numtxinblock, int difficulty,
-			 int numworkers, std::list<int> ports)
+			 int numworkers, int numcores, std::list<int> ports)
 {
   fd_set  readset;
   int	  err = 0;
@@ -589,7 +607,7 @@ void	  execute_worker(unsigned int numtxinblock, int difficulty,
 
   UTXO_init();
   FD_ZERO(&readset);
-
+  
   // Connect to bootstrap node
   boot_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
   if (boot_sock < 0)
