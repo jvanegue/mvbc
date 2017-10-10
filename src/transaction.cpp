@@ -113,7 +113,7 @@ int		trans_sync(blocklist_t added, blocklist_t removed, unsigned int numtxinbloc
 {
   int erased = 0;
   
-  // Go over the added blocks and remove all duplicate transactions from the transpool.
+  // Go over the added blocks and remove all duplicate transactions from the transpool
   for (blocklist_t::iterator it = added.begin(); it != added.end(); it++)
     {
       block_t& curblock = *it;
