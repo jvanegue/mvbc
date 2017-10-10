@@ -4,12 +4,15 @@ extern clientmap_t	clientmap;
 extern UTXO		utxomap;
 extern mempool_t	transpool;
 extern mempool_t	past_transpool;
+extern pthread_mutex_t  transpool_lock;
 
 // Check if a transaction is already present in the mempool
 bool		trans_exists(worker_t *worker, transmsg_t trans)
 {
   std::string	transkey;
 
+  pthread_mutex_lock(&transpool_lock);
+  
   transkey = hash_binary_to_string(trans.data.sender) +
     hash_binary_to_string(trans.data.receiver) +
     hash_binary_to_string(trans.data.amount) +
@@ -18,8 +21,13 @@ bool		trans_exists(worker_t *worker, transmsg_t trans)
   if (transpool.find(transkey) == transpool.end() &&
       worker->miner.pending.find(transkey) == worker->miner.pending.end() &&
       past_transpool.find(transkey) == past_transpool.end())
-    return (false);
-  
+    {
+      
+      pthread_mutex_unlock(&transpool_lock);
+      return (false);
+    }
+
+  pthread_mutex_unlock(&transpool_lock);
   return (true);
 }
 
@@ -70,8 +78,6 @@ int		trans_verify(worker_t *worker,
     hash_binary_to_string(trans.data.amount) +
     hash_binary_to_string(trans.data.timestamp);
   
-  transpool[transkey] = trans;
-
   //std::cerr << "Added transaction to mempool" << std::endl;
   
   // Send transaction to all remotes
@@ -85,12 +91,17 @@ int		trans_verify(worker_t *worker,
       //std::cerr << "Sent transaction to remote port " << remote.remote_port << std::endl;
     }
 
+  pthread_mutex_lock(&transpool_lock);
+  transpool[transkey] = trans;
+  pthread_mutex_unlock(&transpool_lock);
+  
   // Start mining if transpool contains enough transactions to make a block
   if (transpool.size() == numtxinblock)
     {
       std::cerr << "Block is FULL " << numtxinblock << " - starting miner" << std::endl;
       do_mine(worker, difficulty, numtxinblock);
     }
+  
   //else
   //std::cerr << "Block is not FULL - keep listening" << std::endl;
   
@@ -126,12 +137,19 @@ int		trans_sync(blocklist_t added, blocklist_t removed, unsigned int numtxinbloc
 	    hash_binary_to_string(curdata->timestamp);
 
 	  // If this is not already in the transpool, add it back
+	  
+	  pthread_mutex_lock(&transpool_lock);
+
 	  if (transpool.find(transkey) == transpool.end())
 	    {
 	      msg.hdr.opcode = OPCODE_SENDTRANS;
 	      msg.data = *curdata;
 	      transpool[transkey] = msg;
 	    }
+
+	  pthread_mutex_unlock(&transpool_lock);
+
+	  
 	}
     }
   
@@ -157,6 +175,9 @@ int		trans_sync(blocklist_t added, blocklist_t removed, unsigned int numtxinbloc
 	    hash_binary_to_string(curdata->timestamp);
 
 	  // Remove all duplicate transactions from the transpool
+
+	  pthread_mutex_lock(&transpool_lock);
+	  
 	  if (transpool.find(transkey) != transpool.end())
 	    {
 	      msg = transpool[transkey];
@@ -169,6 +190,10 @@ int		trans_sync(blocklist_t added, blocklist_t removed, unsigned int numtxinbloc
 	      msg.data = *curdata;
 	      past_transpool[transkey] = msg;
 	    }
+
+	  pthread_mutex_unlock(&transpool_lock);
+
+	  
 	}
     }
   

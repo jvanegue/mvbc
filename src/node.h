@@ -134,7 +134,7 @@ typedef struct		ctx
 
 typedef struct		job
 {
-  unsigned char		type;
+  //unsigned char		type;
   ctx_t			context;  
 }			job_t;
 

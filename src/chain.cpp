@@ -7,6 +7,7 @@ extern workermap_t	workermap;
 extern clientmap_t	clientmap;
 extern mempool_t	transpool;
 extern mempool_t	past_transpool;
+extern pthread_mutex_t  transpool_lock;
 
 // Obtain a block hash from one of the peers
 bool		worker_get_hash(worker_t& worker, unsigned char next_height[32],
@@ -320,7 +321,11 @@ bool		chain_accept_block(blockmsg_t msg, char *transdata,
       //miner.sock = 0;
       pthread_kill(miner.tid, SIGTERM);
       miner.tid = 0;
+      
+      pthread_mutex_lock(&transpool_lock);
       transpool.insert(miner.pending.begin(), miner.pending.end());
+      pthread_mutex_unlock(&transpool_lock);
+      
       miner.pending.clear();
       std::cerr << "Accepted block on the chain - killed miner tid "
 		<< miner.tid << " on the way " << std::endl;
@@ -384,8 +389,13 @@ bool		chain_merge_simple(blockmsg_t msg, char *transdata,
       //miner.sock = 0;
       pthread_kill(miner.tid, SIGTERM);
       miner.tid = 0;
+
       
+      pthread_mutex_lock(&transpool_lock);
       transpool.insert(miner.pending.begin(), miner.pending.end());
+      pthread_mutex_unlock(&transpool_lock);
+
+      
       miner.pending.clear();
       thread_create();
       
@@ -431,12 +441,12 @@ bool			chain_merge_deep(blockmsg_t msg, char *transdata,
   
   if (miner.tid)
     {
-      //close(miner.sock);
-      //miner.sock = 0;
       pthread_kill(miner.tid, SIGTERM);
       miner.tid = 0;
+      pthread_mutex_lock(&transpool_lock);
       transpool.insert(miner.pending.begin(), miner.pending.end());
       miner.pending.clear();
+      pthread_mutex_unlock(&transpool_lock);
       thread_create();
     }
 
