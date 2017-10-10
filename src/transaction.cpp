@@ -3,11 +3,10 @@
 extern clientmap_t	clientmap;
 extern UTXO		utxomap;
 extern mempool_t	transpool;
-extern mempool_t	pending_transpool;
 extern mempool_t	past_transpool;
 
 // Check if a transaction is already present in the mempool
-bool		trans_exists(transmsg_t trans)
+bool		trans_exists(worker_t *worker, transmsg_t trans)
 {
   std::string	transkey;
 
@@ -17,7 +16,8 @@ bool		trans_exists(transmsg_t trans)
     hash_binary_to_string(trans.data.timestamp);
   
   if (transpool.find(transkey) == transpool.end() &&
-      pending_transpool.find(transkey) == pending_transpool.end())
+      worker->miner.pending.find(transkey) == worker->miner.pending.end() &&
+      past_transpool.find(transkey) == past_transpool.end())
     return (false);
   
   return (true);
@@ -25,7 +25,7 @@ bool		trans_exists(transmsg_t trans)
 
 
 // Verify transaction and add it to the pool if correct
-int		trans_verify(worker_t &worker,
+int		trans_verify(worker_t *worker,
 			     transmsg_t trans,
 			     unsigned int numtxinblock,
 			     int difficulty)
@@ -35,7 +35,7 @@ int		trans_verify(worker_t &worker,
 
   //std::cerr << "VERIFYing transaction" << std::endl;
 
-  if (trans_exists(trans))
+  if (trans_exists(worker, trans))
     {
       std::cerr << "Transaction is already in mempool - ignoring" << std::endl;
       return (0);
@@ -89,9 +89,7 @@ int		trans_verify(worker_t &worker,
   if (transpool.size() == numtxinblock)
     {
       std::cerr << "Block is FULL " << numtxinblock << " - starting miner" << std::endl;
-      do_mine_fork(worker, difficulty, numtxinblock);
-      pending_transpool.insert(transpool.begin(), transpool.end());
-      transpool.clear();
+      do_mine(worker, difficulty, numtxinblock);
     }
   //else
   //std::cerr << "Block is not FULL - keep listening" << std::endl;

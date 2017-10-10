@@ -5,8 +5,8 @@ bool		bootstrap = false;
 unsigned int	numworkers = 0;
 unsigned int	numcores = 0;
 std::list<int>	ports;
-int		difficulty = 1;
-int		numtxinblock = DEFAULT_TRANS_PER_BLOCK;
+unsigned int	difficulty = 1;
+unsigned int	numtxinblock = DEFAULT_TRANS_PER_BLOCK;
 
 // Print help and exit on error
 void help_and_exit(std::string msg, char *str)

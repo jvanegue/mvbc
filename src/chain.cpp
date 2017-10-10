@@ -6,7 +6,6 @@ extern pthread_mutex_t  chain_lock;
 extern workermap_t	workermap;
 extern clientmap_t	clientmap;
 extern mempool_t	transpool;
-extern mempool_t	pending_transpool;
 extern mempool_t	past_transpool;
 
 // Obtain a block hash from one of the peers
@@ -42,7 +41,7 @@ bool		worker_get_hash(worker_t& worker, unsigned char next_height[32],
     if (ret < 0)
       {
 	std::cerr << "Chain syncing failed in select" << std::endl;
-	perror("select");
+	perror("worker_get_hash: select");
 	return (false);
       }
     else if (ret != 0)
@@ -124,7 +123,7 @@ bool		worker_get_block(worker_t& worker, unsigned char next_height[32],
     if (ret < 0)
       {
 	std::cerr << "Block syncing failed in select 1" << std::endl;
-	perror("select");
+	perror("worker_get_block: select");
 	free(transdata);
 	return (false);
       }
@@ -315,15 +314,17 @@ bool		chain_accept_block(blockmsg_t msg, char *transdata,
   bool		res;
   
   // Kill any existing miner and push new block on chain
-  if (miner.pid)
+  if (miner.tid)
     {
-      close(miner.sock);
-      miner.sock = 0;
-      kill(miner.pid, SIGTERM);
-      transpool.insert(pending_transpool.begin(), pending_transpool.end());
-      pending_transpool.clear();
-      std::cerr << "Accepted block on the chain - killed miner pid "
-		<< miner.pid << " on the way " << std::endl;
+      //close(miner.sock);
+      //miner.sock = 0;
+      pthread_kill(miner.tid, SIGTERM);
+      miner.tid = 0;
+      transpool.insert(miner.pending.begin(), miner.pending.end());
+      miner.pending.clear();
+      std::cerr << "Accepted block on the chain - killed miner tid "
+		<< miner.tid << " on the way " << std::endl;
+      thread_create();
     }
   else
     {
@@ -377,14 +378,16 @@ bool		chain_merge_simple(blockmsg_t msg, char *transdata,
   bmap.erase(height);
   
   // Kill any existing miner and push new block on chain
-  if (miner.pid)
+  if (miner.tid)
     {
-      close(miner.sock);
-      miner.sock = 0;
-      kill(miner.pid, SIGTERM);
-
-      transpool.insert(pending_transpool.begin(), pending_transpool.end());
-      pending_transpool.clear();
+      //close(miner.sock);
+      //miner.sock = 0;
+      pthread_kill(miner.tid, SIGTERM);
+      miner.tid = 0;
+      
+      transpool.insert(miner.pending.begin(), miner.pending.end());
+      miner.pending.clear();
+      thread_create();
       
       newtop.hdr = msg;
       
@@ -392,8 +395,8 @@ bool		chain_merge_simple(blockmsg_t msg, char *transdata,
       std::string height = tag2str(newtop.hdr.height);
       bmap[height] = newtop;
       
-      std::cerr << "Accepted block on the chain - killed miner pid "
-		<< miner.pid << " on the way " << std::endl;
+      std::cerr << "Accepted block on the chain - killed miner tid "
+		<< miner.tid << " on the way " << std::endl;
     }
   else
     {
@@ -425,15 +428,16 @@ bool			chain_merge_deep(blockmsg_t msg, char *transdata,
   blocklistpair_t	bp;
 
   std::cerr << "ENTERED chain merge deep" << std::endl;
-
-  // Killing any running miner
-  if (miner.pid)
+  
+  if (miner.tid)
     {
-      close(miner.sock);
-      miner.sock = 0;
-      kill(miner.pid, SIGTERM);
-      transpool.insert(pending_transpool.begin(), pending_transpool.end());
-      pending_transpool.clear();
+      //close(miner.sock);
+      //miner.sock = 0;
+      pthread_kill(miner.tid, SIGTERM);
+      miner.tid = 0;
+      transpool.insert(miner.pending.begin(), miner.pending.end());
+      miner.pending.clear();
+      thread_create();
     }
 
   // There is no common ancestor - sync up with chain of sent block entirely

@@ -1,6 +1,7 @@
 #include <iostream>
 #include <list>
 #include <map>
+#include <queue>
 #include <stack>
 #include <stdio.h>
 #include <stdlib.h>
@@ -80,20 +81,6 @@ typedef struct		block
   transdata_t		*trans;
 }			block_t;
 
-typedef struct		miner
-{
-  pid_t			pid;
-  int			sock;
-}			miner_t;
-
-typedef struct		worker
-{
-  int			serv_sock;
-  unsigned short	serv_port;
-  std::list<int>	clients;
-  miner_t		miner;
-}			worker_t;
-
 typedef struct		remote
 {
   int			client_sock;
@@ -106,29 +93,66 @@ typedef struct		 account
    unsigned char	 amount[32];
 }			 account_t;
 
-typedef unsigned long long int ullint;
-typedef unsigned int uint;
-typedef std::list<bootclient_t>  bootmap_t;
-typedef std::map<int, remote_t>  clientmap_t;
-typedef std::map<int, worker_t>  workermap_t;
-typedef std::map<int, miner_t>   minermap_t;
+
+// Typedefs
+typedef unsigned long long int		ullint;
+typedef unsigned int			uint;
+typedef std::list<bootclient_t>		bootmap_t;
+typedef std::map<int, remote_t>		clientmap_t;
 typedef std::map<std::string,account_t> UTXO;
 typedef std::map<std::string,transmsg_t> mempool_t;
-
-typedef std::stack<block_t>	 blockchain_t;
-typedef std::map<std::string,block_t> blockmap_t;
-
-typedef std::list<block_t>	 blocklist_t;
+typedef std::stack<block_t>		blockchain_t;
+typedef std::map<std::string,block_t>	blockmap_t;
+typedef std::list<block_t>		blocklist_t;
 typedef std::pair<blocklist_t,blocklist_t> blocklistpair_t;
+typedef std::map<int,pthread_t>		threadmap_t;
+typedef std::map<int,bool>		sockmap_t;
 
-typedef std::list<pthread_t>	threadpool_t;
+// Data types depending on typedefs
+typedef struct		miner
+{
+  pthread_t		tid;
+  //int			sock;
+  mempool_t		pending;
+}			miner_t;
 
-// Defined
+typedef struct		worker
+{
+  int			serv_sock;
+  unsigned short	serv_port;
+  std::list<int>	clients;
+  miner_t		miner;
+}			worker_t;
+
+typedef struct		ctx
+{
+  worker_t		*worker;
+  int			sock;
+  int			numtxinblock;
+  int			difficulty;  
+}			ctx_t;
+
+typedef struct		job
+{
+  unsigned char		type;
+  ctx_t			context;  
+}			job_t;
+
+typedef std::queue<job_t>		jobqueue_t;
+typedef std::map<int, worker_t>		workermap_t;
+typedef std::map<int, miner_t>		minermap_t;
+
+
+// Defined OPCODE
 #define OPCODE_SENDTRANS	'0'
 #define OPCODE_SENDBLOCK	'1'
 #define OPCODE_GETBLOCK		'2'
 #define OPCODE_GETHASH		'3'
 #define OPCODE_SENDPORTS	'4'
+
+// Define JOBTYPE
+#define JOBTYPE_WORKER		1
+#define JOBTYPE_MINER		2
 
 #define DEFAULT_TRANS_PER_BLOCK	50000
 
@@ -137,8 +161,10 @@ typedef std::list<pthread_t>	threadpool_t;
 
 // Main functions 
 void		execute_bootstrap();
-void		execute_worker(unsigned int numtx, int difficulty, int numworkers, int numcores,
+void		execute_worker(unsigned int numtx, unsigned int difficulty, unsigned int numworkers, unsigned int numcores,
 			       std::list<int> ports);
+void*		thread_start(void *null);
+void		thread_create();
 
 // Utilities
 char		*pack_sendport(bootmap_t portmap, int *len);
@@ -162,11 +188,11 @@ int		async_read(int fd, char *buff, int len, const char *errstr);
 // Transaction related functions
 int		trans_sync(blocklist_t added, blocklist_t removed, unsigned int numtxinblock);
 bool		trans_exists(transmsg_t trans);
-int		trans_verify(worker_t &worker, transmsg_t trans, unsigned int numtxinblock, int difficulty);
+int		trans_verify(worker_t *worker, transmsg_t trans, unsigned int numtxinblock, int difficulty);
 int		trans_exec(transdata_t *data, int numtxinblock, bool reverted);
 
 // Mining related functions
-int		do_mine_fork(worker_t &worker, int difficulty, int numtxinblock);
+int		do_mine(worker_t *worker, int difficulty, int numtxinblock);
 
 // Chain related functions
 bool		chain_propagate_only(blockmsg_t msg, char *transdata, unsigned int numtxinblock, int port);

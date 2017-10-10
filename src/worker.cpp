@@ -1,13 +1,13 @@
 #include "node.h"
 
 // These maps contains all the worker, clients and accounts
+fd_set		readset;
 workermap_t	workermap;
 clientmap_t	clientmap;
 UTXO		utxomap;
 
-// Current transaction pool, pending (mined) pool and past pool (already committed)
+// Current transaction pool and past pool (already committed)
 mempool_t	transpool;
-mempool_t	pending_transpool;
 mempool_t	past_transpool;
 
 // The block chain is also indexed in a map for faster access by height
@@ -20,18 +20,20 @@ time_t		time_first_block = 0;
 time_t		time_last_block = 0;
 
 // For multithread implementation
-threadpool_t	avail_threads;
-threadpool_t	busy_threads;
+threadmap_t	tmap;
+jobqueue_t	jobq;
+pthread_mutex_t job_lock = PTHREAD_MUTEX_INITIALIZER;
+sockmap_t	sockm;
 
 // Helper function to reset socket readset for select
-static int reset_readset(int boot_sock, fd_set *readset)
+static int reset_readset(int boot_sock)
 {
   int max = 0;
 
-  FD_ZERO(readset);
+  FD_ZERO(&readset);
   if (boot_sock != 0)
     {
-      FD_SET(boot_sock, readset);
+      FD_SET(boot_sock, &readset);
       max = boot_sock;
     }
   
@@ -40,20 +42,24 @@ static int reset_readset(int boot_sock, fd_set *readset)
       int cursock = it->second.serv_sock;
       if (cursock > max)
 	max = cursock;
-      FD_SET(cursock, readset);
+      FD_SET(cursock, &readset);
       for (std::list<int>::iterator cit = it->second.clients.begin();
 	   cit != it->second.clients.end(); cit++)
 	{
 	  int cursock = *cit;
 	  if (cursock > max)
 	    max = cursock;
-	  FD_SET(cursock, readset);
+	  FD_SET(cursock, &readset);
 	}
+
+      /*
       miner_t miner = it->second.miner;
       if (miner.sock != 0)
-	FD_SET(miner.sock, readset);
+	FD_SET(miner.sock, &readset);
       if (miner.sock > max)
 	max = miner.sock;
+      */
+
       
     }
   for (clientmap_t::iterator cit = clientmap.begin(); cit != clientmap.end(); cit++)
@@ -61,7 +67,7 @@ static int reset_readset(int boot_sock, fd_set *readset)
       int cursock = cit->second.client_sock;
       if (cursock > max)
 	max = cursock;
-      FD_SET(cursock, readset);
+      FD_SET(cursock, &readset);
     }
   max = max + 1;
   return (max);
@@ -243,8 +249,11 @@ static int		worker_update(int port)
 
 
 // Treat events on the miner unix socket (new block mined?)
-static int	miner_update(worker_t& worker, int sock, int numtxinblock)
+//static int	miner_update(worker_t *worker, int sock, int numtxinblock)
+static int	miner_update(worker_t *worker, blockmsg_t& newblock, char *data, int numtxinblock)
 {
+
+  /*
   blockmsg_t     newblock;
   char		*data;
   int		readlen;
@@ -279,6 +288,7 @@ static int	miner_update(worker_t& worker, int sock, int numtxinblock)
       free(data);
       return (-1);
     }
+  */
 
   std::cerr << "MINER READ!" << std::endl;
   
@@ -293,22 +303,22 @@ static int	miner_update(worker_t& worker, int sock, int numtxinblock)
       
       async_send(remote.client_sock, &c, 1, "Miner update");
       async_send(remote.client_sock, (char *) &newblock, sizeof(newblock), "Miner update 2");
-      async_send(remote.client_sock, (char *) data, len, "Miner update 3");
+      async_send(remote.client_sock, (char *) data, sizeof(transdata_t) * numtxinblock, "Miner update 3");
     }
 
   // Make sure nobody can touch the chain while we execute transaction and stack new block
   pthread_mutex_lock(&chain_lock);  
 
   // Transactions are marked as past instead of pending
-  past_transpool.insert(pending_transpool.begin(), pending_transpool.end());
-  pending_transpool.clear();
+  past_transpool.insert(worker->miner.pending.begin(), worker->miner.pending.end());
+  worker->miner.pending.clear();
   
   // Execute all transactions of the block
   trans_exec((transdata_t *) data, numtxinblock, false);
 
   // Close UNIX socket and zero miner pid
-  close(worker.miner.sock);
-  worker.miner.sock = 0;
+  //close(worker->miner.sock);
+  //worker->miner.sock = 0;
 
   std::cerr << "Acquiring critical section for chain update..." << std::endl;
   
@@ -332,7 +342,7 @@ static int	miner_update(worker_t& worker, int sock, int numtxinblock)
   time_last_block = curtime;
   std::string curheight = tag2str(newblock.height);
   std::cerr << "CHAIN/ACCOUNTS UPDATE : new current height = " << curheight
-	    << " on port " << worker.serv_port
+	    << " on port " << worker->serv_port
 	    << " SEC_SINCE_LAST:  " << since_last_block
 	    << " SEC_SINCE_FIRST: " << since_first_block
 	    << std::endl;
@@ -345,7 +355,7 @@ static int	miner_update(worker_t& worker, int sock, int numtxinblock)
 }
 
 // Perform the action of mining. Write result on socket when available
-static int	do_mine(char *buff, int len, int difficulty, char *hash)
+static int	do_mine_hash(char *buff, int len, int difficulty, char *hash)
 {
   int 		idx;
   
@@ -361,101 +371,102 @@ static int	do_mine(char *buff, int len, int difficulty, char *hash)
 
 
 // Perform the action of mining: 
-int		do_mine_fork(worker_t &worker, int difficulty, int numtxinblock)
+int		do_mine(worker_t *worker, int difficulty, int numtxinblock)
 {
-  int		pipefd[2];
-  pid_t		pid;
+  //int		pipefd[2];
+  miner_t	newminer;
+  
+  //if (pipe(pipefd) != 0)
+  //  FATAL("pipe");
+  //newminer.sock = pipefd[0];
+  
+  newminer.tid = pthread_self();
+  newminer.pending.insert(transpool.begin(), transpool.end());
+  transpool.clear();
 
-  if (pipe(pipefd) != 0)
-    FATAL("pipe");
-
-  // Child: start the miner in a different process
-  pid = fork();
-  if (!pid)
+  worker->miner = newminer;
+  
+  unsigned char  hash[32];
+  blockmsg_t     newblock;
+  
+  if (false == chain.empty())
     {
-      close(pipefd[0]);
-      
-      unsigned char  hash[32];
-      blockmsg_t     newblock;
-      
-      if (false == chain.empty())
-	{
-	  block_t      lastblock = chain.top();
-	  blockmsg_t   header    = lastblock.hdr;
-	  memcpy(newblock.priorhash, header.hash, sizeof(newblock.priorhash));
-	  memcpy(newblock.height, header.height, sizeof(newblock.height));
-	  string_integer_increment((char *) newblock.height, sizeof(newblock.height));
-  	}
-      else
-	{
-	  unsigned char	  priorhash[32];
-	  memset(priorhash, '0', sizeof(priorhash));
-	  sha256(priorhash, sizeof(priorhash), newblock.priorhash);
-	  memset(newblock.height, '0', sizeof(newblock.height));
-	}      
-      sha256_mineraddr(newblock.mineraddr);
-
-      char		*buff;
-      blockhash_t	*data;
-      int		len;
-
-      // Prepare for hashing
-      len = sizeof(blockhash_t) + sizeof(transdata_t) * numtxinblock;
-      buff = (char *) malloc(len);
-      if (buff == NULL)
-	FATAL("FAILED miner malloc");
-      data = (blockhash_t *) buff;
-      memset(data->nonce, '0', sizeof(data->nonce));
-
-      memcpy(data->priorhash, newblock.priorhash, 32);
-      memcpy(data->height, newblock.height, 32);
-      memcpy(data->mineraddr, newblock.mineraddr, 32);
-
-      // Copy transaction buffer into block to mine
-      int off = sizeof(blockhash_t);
-      for (mempool_t::iterator it = transpool.begin(); it != transpool.end(); it++)
-	{
-	  transmsg_t cur = it->second;
-	  transdata_t curdata = cur.data;
-	  
-	  memcpy(buff + off, &curdata, sizeof(curdata));
-	  off += sizeof(transdata_t);
-	}
-      
-      // Mine
-      while (do_mine(buff, len, difficulty, (char *) hash) < 0)
-	string_integer_increment((char *) data->nonce, sizeof(data->nonce));	      
-      memcpy(newblock.hash, hash, sizeof(newblock.hash));
-
-      std::cerr << "WORKER on port " << worker.serv_port << " MINED BLOCK!" << std::endl;
-      
-      // Send result on UNIX socket and exit
-      if (sizeof(newblock) != write(pipefd[1], (char *) &newblock, sizeof(newblock)))
-	std::cerr << "Miner process failed to write new block on UNIX socket" << std::endl;
-      int totlen = len - sizeof(blockhash_t);
-      if (totlen != write(pipefd[1], (char *) buff + sizeof(blockhash_t), totlen))
-	std::cerr << "Miner process failed to write new block hash on UNIX socket" << std::endl;
-
-      std::cerr << "MINER will exit" << std::endl;
-      
-      //close(pipefd[1]);
-      free(buff);
-      exit(0);
+      block_t      lastblock = chain.top();
+      blockmsg_t   header    = lastblock.hdr;
+      memcpy(newblock.priorhash, header.hash, sizeof(newblock.priorhash));
+      memcpy(newblock.height, header.height, sizeof(newblock.height));
+      string_integer_increment((char *) newblock.height, sizeof(newblock.height));
     }
-
-
-  // Parent: add miner in miner map and add miner unix socket to readset
   else
     {
-      miner_t newminer;
-
-      close(pipefd[1]);
-      newminer.sock = pipefd[0];
-      newminer.pid = pid;
-      worker.miner = newminer;
+      unsigned char	  priorhash[32];
+      memset(priorhash, '0', sizeof(priorhash));
+      sha256(priorhash, sizeof(priorhash), newblock.priorhash);
+      memset(newblock.height, '0', sizeof(newblock.height));
+    }      
+  sha256_mineraddr(newblock.mineraddr);
+  
+  char		*buff;
+  blockhash_t	*data;
+  int		len;
+  
+  // Prepare for hashing
+  len = sizeof(blockhash_t) + sizeof(transdata_t) * numtxinblock;
+  buff = (char *) malloc(len);
+  if (buff == NULL)
+    FATAL("FAILED miner malloc");
+  data = (blockhash_t *) buff;
+  memset(data->nonce, '0', sizeof(data->nonce));
+  
+  memcpy(data->priorhash, newblock.priorhash, 32);
+  memcpy(data->height, newblock.height, 32);
+  memcpy(data->mineraddr, newblock.mineraddr, 32);
+  
+  // Copy transaction buffer into block to mine
+  int off = sizeof(blockhash_t);
+  for (mempool_t::iterator it = newminer.pending.begin(); it != newminer.pending.end(); it++)
+    {
+      transmsg_t cur = it->second;
+      transdata_t curdata = cur.data;
+      
+      memcpy(buff + off, &curdata, sizeof(curdata));
+      off += sizeof(transdata_t);
     }
   
-  // Return to main select loop
+  // Mine
+  while (do_mine_hash(buff, len, difficulty, (char *) hash) < 0)
+    string_integer_increment((char *) data->nonce, sizeof(data->nonce));	      
+  memcpy(newblock.hash, hash, sizeof(newblock.hash));
+  
+  std::cerr << "WORKER on port " << worker->serv_port << " MINED BLOCK!" << std::endl;
+  
+  // Send result on UNIX socket and exit
+  /*
+  if (sizeof(newblock) != write(pipefd[1], (char *) &newblock, sizeof(newblock)))
+    std::cerr << "Miner process failed to write new block on UNIX socket" << std::endl;
+  int totlen = len - sizeof(blockhash_t);
+  if (totlen != write(pipefd[1], (char *) buff + sizeof(blockhash_t), totlen))
+    std::cerr << "Miner process failed to write new block hash on UNIX socket" << std::endl;
+  
+  std::cerr << "MINER finished" << std::endl;
+  */
+  
+  //free(buff);
+
+  // Treat result immediately in the same thread
+  /*
+  miner_update(worker, pipefd[0], numtxinblock);
+  FD_CLR(pipefd[0], &readset);
+  close(pipefd[0]);
+  close(pipefd[1]);
+  worker->miner.sock = 0;
+  */
+
+  miner_update(worker, newblock, ((char *) buff) + sizeof(blockhash_t), numtxinblock);
+
+  //free(buff);
+  
+  // Return to main loop
   return (0);
 }
 
@@ -464,9 +475,8 @@ int		do_mine_fork(worker_t &worker, int difficulty, int numtxinblock)
 
 // Treat traffic from existing worker's clients
 // Could be transaction or block messages usually
-static int	client_update(int port, int client_sock, unsigned int numtxinblock, int difficulty)
+static int	client_update(worker_t *worker, int client_sock, unsigned int numtxinblock, int difficulty)
 {
-  worker_t&	worker = workermap[port];
   char		blockheight[32];
   std::string	height;
   transmsg_t	trans;
@@ -475,10 +485,11 @@ static int	client_update(int port, int client_sock, unsigned int numtxinblock, i
   blockmsg_t	block;
   char		*transdata = NULL;
   block_t	blk;
-  
+
+ retry:
   int len = read(client_sock, &opcode, 1);
   if (len == 0)
-    return (1);
+    goto retry;
   if (len != 1)
     FATAL("FAILED client update read");
 
@@ -511,7 +522,7 @@ static int	client_update(int port, int client_sock, unsigned int numtxinblock, i
       if (transdata == NULL)
 	FATAL("SENDBLOCK malloc");
       len = async_read(client_sock, (char *) transdata, numtxinblock * 128, "sendblock read (2)");
-      chain_store(block, transdata, numtxinblock, port);
+      chain_store(block, transdata, numtxinblock, worker->serv_port);
       return (0);
       break;
 
@@ -592,10 +603,9 @@ void		UTXO_init()
 
 
 // Main procedure for node in worker mode
-void	  execute_worker(unsigned int numtxinblock, int difficulty,
-			 int numworkers, int numcores, std::list<int> ports)
+void	  execute_worker(unsigned int numtxinblock, unsigned int difficulty,
+			 unsigned int numworkers, unsigned int numcores, std::list<int> ports)
 {
-  fd_set  readset;
   int	  err = 0;
   int     boot_sock;
   int	  serv_sock;
@@ -607,6 +617,9 @@ void	  execute_worker(unsigned int numtxinblock, int difficulty,
 
   UTXO_init();
   FD_ZERO(&readset);
+
+  if (numcores == 0)
+    numcores = 1;
   
   // Connect to bootstrap node
   boot_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -663,8 +676,8 @@ void	  execute_worker(unsigned int numtxinblock, int difficulty,
 
       newworker.serv_sock = serv_sock;
       newworker.serv_port = port;
-      newworker.miner.pid = 0;
-      newworker.miner.sock = 0;
+      newworker.miner.tid = 0;
+      //newworker.miner.sock = 0;
       workermap[port] = newworker;
 
       // Advertize new worker to bootstrap node
@@ -672,14 +685,17 @@ void	  execute_worker(unsigned int numtxinblock, int difficulty,
       pack_bootmsg(port, &msg);
       async_send(boot_sock, (char *) &msg, sizeof(msg), "BOOTMSG");
     }
+
+  // Create all threads
+  for (unsigned int idx = 0; idx < numcores; idx++)
+    thread_create();
   
   // Listen to all incoming traffic
   while (1)
     {
       
       // Reset the read set
-      max = reset_readset(boot_sock, &readset);
-      
+      max = reset_readset(boot_sock);
       int ret = 0;
       do { ret = select(max, &readset, NULL, NULL, NULL); }
       while (ret == -1 && errno == EINTR); 
@@ -724,45 +740,127 @@ void	  execute_worker(unsigned int numtxinblock, int difficulty,
 	       it2 != it->second.clients.end(); )
 	    {
 	      int client_sock = *it2;
-	      if (FD_ISSET(client_sock, &readset))
+	      if (FD_ISSET(client_sock, &readset) && sockm.find(client_sock) == sockm.end())
 		{
-		  ret = client_update(it->first, client_sock, numtxinblock, difficulty);
-		  if (ret < 0)
-		    {
-		      std::cerr << "Error during client update" << std::endl;
-		      close(client_sock);
-		      FD_CLR(client_sock, &readset);
-		      it2 = it->second.clients.erase(it2);
-		    }
-		  else if (ret == 1)
-		    {
-		      std::cerr << "Removed client from worker clients list" << std::endl;
-		      close(client_sock);
-		      FD_CLR(client_sock, &readset);
-		      it2 = it->second.clients.erase(it2);
-		    }
-		  break;
+		  job_t	job;
+		  ctx_t	ctx;
+		  ctx.worker = &it->second;
+		  ctx.sock = client_sock;
+		  ctx.numtxinblock = numtxinblock;
+		  ctx.difficulty = difficulty;
+		  job.context = ctx;
+		  job.type = JOBTYPE_WORKER;
+		  pthread_mutex_lock(&job_lock);
+		  jobq.push(job);
+		  sockm[client_sock] = true;
+		  pthread_mutex_unlock(&job_lock);
 		}
 	      it2++;
 	    }
 	  
 	  // Check if we have any update from an existing miner
+	  /*
 	  int miner_sock = it->second.miner.sock;
-	  if (miner_sock && FD_ISSET(miner_sock, &readset))
+	  if (miner_sock && FD_ISSET(miner_sock, &readset) && sockm.find(miner_sock) == sockm.end())
 	    {
-	      ret = miner_update(it->second, miner_sock, numtxinblock);
-	      if (ret < 0)
-		{
-		  close(miner_sock);
-		  FD_CLR(miner_sock, &readset);
-		  it->second.miner.sock = 0;
-		}
+	      job_t	job;
+	      ctx_t	ctx;
+	      ctx.worker = &it->second;
+	      ctx.sock = miner_sock;
+	      ctx.numtxinblock = numtxinblock;
+	      ctx.difficulty = difficulty;
+	      job.context = ctx;
+	      job.type = JOBTYPE_MINER;
+	      pthread_mutex_lock(&job_lock);
+	      jobq.push(job);
+	      sockm[miner_sock] = true;
+	      pthread_mutex_unlock(&job_lock);
 	      break;
 	    }
+	  */
 	}
 
     }
 
 }
 
+// Create a new thread
+void		thread_create()
+{
+  pthread_t      thr;
+  
+  if (pthread_create(&thr, NULL, thread_start, NULL) != 0)
+    {
+      std::cerr << "Failed to create new thread" << std::endl;
+      exit(-1);
+    }
+}
 
+// Main thread loop - used to treat worker and miner updates
+void*		thread_start(void *null)
+{
+  int		ret;
+  job_t		next;
+  
+  while (true)
+    {
+
+      // If we have nothing to do, wait 1 milliseconds and look again
+      if (jobq.empty())
+	{
+	  sleep(1);
+	  continue;
+	}
+
+      // Make sure we access the job queue under lock
+      pthread_mutex_lock(&job_lock);
+      next = jobq.front();
+      jobq.pop();
+      pthread_mutex_unlock(&job_lock);
+
+      // Treat the job
+      switch (next.type)
+	{
+	case JOBTYPE_WORKER:
+	  ret = client_update(next.context.worker, next.context.sock, next.context.numtxinblock, next.context.difficulty);
+	  if (ret < 0)
+	    {
+	      std::cerr << "Error during client update" << std::endl;
+	      close(next.context.sock);
+	      FD_CLR(next.context.sock, &readset);
+	      next.context.worker->clients.remove(next.context.sock);
+	    }
+	  else if (ret == 1)
+	    {
+	      std::cerr << "Removed client from worker clients list socket " << next.context.sock << std::endl;
+	      close(next.context.sock);
+	      FD_CLR(next.context.sock, &readset);
+	      next.context.worker->clients.remove(next.context.sock);
+	    }
+	  break;
+
+	  /*
+	case JOBTYPE_MINER:
+	  ret = miner_update(next.context.worker, next.context.sock, next.context.numtxinblock);
+	  if (ret < 0)
+	    {
+	      close(next.context.sock);
+	      FD_CLR(next.context.sock, &readset);
+	      next.context.worker->miner.sock = 0;
+	    }
+	  break;
+	  */
+	  
+	default:
+	  std::cerr << "Unknown job type - ignoring" << std::endl;
+	  continue;
+	}
+
+      // Mark this socket as not waiting for more job
+      pthread_mutex_lock(&job_lock);
+      sockm.erase(next.context.sock);
+      pthread_mutex_unlock(&job_lock);
+    }
+
+  return (NULL);
+}
