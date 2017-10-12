@@ -45,7 +45,7 @@ int		trans_verify(worker_t *worker,
 
   if (trans_exists(worker, trans))
     {
-      std::cerr << "Transaction is already in mempool - ignoring" << std::endl;
+      //std::cerr << "Transaction is already in mempool - ignoring" << std::endl;
       return (0);
     }
   

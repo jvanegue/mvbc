@@ -14,9 +14,11 @@ bool		worker_get_hash(worker_t& worker, unsigned char next_height[32],
 				int numtxinblock, hashmsg_t& msg)
 {
   fd_set	fds;
-  int		max;
+  int		max = 0;
   unsigned char found_hash[32];
   int		ret = 0;
+
+  std::cerr << "ENTERED worker get hash" << std::endl;
   
   // Send message to ask for hash of ancestor
   FD_ZERO(&fds);
@@ -89,7 +91,7 @@ bool		worker_get_block(worker_t& worker, unsigned char next_height[32],
 				 int numtxinblock, block_t& block)
 {
   fd_set	fds;
-  int		max;
+  int		max = 0;
   blockmsg_t	hdr;
   char		*transdata = (char *) malloc(numtxinblock * 128);
   int		ret;
@@ -99,6 +101,8 @@ bool		worker_get_block(worker_t& worker, unsigned char next_height[32],
       std::cerr << "Failed to allocate transdata for block during chain syncing" << std::endl;
       return (false);
     }
+
+    std::cerr << "ENTERED worker get block" << std::endl;
   
   // Send message to ask for the block data at given height
   FD_ZERO(&fds);
@@ -178,7 +182,10 @@ bool		worker_get_block(worker_t& worker, unsigned char next_height[32],
 // Store new block in chain
 bool		chain_store(blockmsg_t msg, char *transdata, unsigned int numtxinblock, int port)
 {
-  pthread_mutex_lock(&chain_lock);  
+  std::cerr << "Trying to acquire chain lock" << std::endl;
+  pthread_mutex_lock(&chain_lock);
+  std::cerr << "Acquired chain lock" << std::endl;
+  
   if (chain.size() == 0)
     chain_accept_block(msg, transdata, numtxinblock, port);
   else
@@ -198,6 +205,7 @@ bool		chain_store(blockmsg_t msg, char *transdata, unsigned int numtxinblock, in
 	chain_propagate_only(msg, transdata, numtxinblock, port);
     }
 
+  std::cerr << "Releasing chain lock" << std::endl;
   pthread_mutex_unlock(&chain_lock);
   return (true);
 }
@@ -215,7 +223,7 @@ bool			chain_sync(worker_t& worker, blockmsg_t newblock,
   hashmsg_t		ancestor_hash;
   block_t		ancestor_block;
   
-  std::cerr << "Entering chain sync" << std::endl;
+  std::cerr << "ENTERED chain sync" << std::endl;
 
   // We start to search from the minimal height from chain and new block
   if (chain.size() == 0)
@@ -313,12 +321,12 @@ bool		chain_accept_block(blockmsg_t msg, char *transdata,
   blocklist_t	removed;
   blocklistpair_t bp;
   bool		res;
+
+  std::cerr << "Entered chain accept block" << std::endl;
   
   // Kill any existing miner and push new block on chain
   if (miner.tid)
     {
-      //close(miner.sock);
-      //miner.sock = 0;
       pthread_kill(miner.tid, SIGTERM);
       miner.tid = 0;
       
@@ -385,16 +393,12 @@ bool		chain_merge_simple(blockmsg_t msg, char *transdata,
   // Kill any existing miner and push new block on chain
   if (miner.tid)
     {
-      //close(miner.sock);
-      //miner.sock = 0;
       pthread_kill(miner.tid, SIGTERM);
       miner.tid = 0;
-
       
       pthread_mutex_lock(&transpool_lock);
       transpool.insert(miner.pending.begin(), miner.pending.end());
       pthread_mutex_unlock(&transpool_lock);
-
       
       miner.pending.clear();
       thread_create();

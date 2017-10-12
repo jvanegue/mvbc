@@ -1,5 +1,11 @@
 #include "node.h"
 
+// Network lock
+extern pthread_mutex_t  sockmap_lock;
+extern sockmap_t	rsockmap;
+extern sockmap_t	wsockmap;
+
+//pthread_mutex_t		net_lock = PTHREAD_MUTEX_INITIALIZER;
 
 // Binary to String hash
 std::string	hash_binary_to_string(unsigned char hash[32])
@@ -178,21 +184,60 @@ void	string_integer_increment(char *buff, int len)
 // Perform asynchronous send with retry until socket is ready
 int	async_send(int fd, char *buff, int len, const char *errstr)
 {
-  int	offset = 0;
+  //int	offset = 0;
+
+  // If there is already data pending, just append to it instead of trying to send
+  pthread_mutex_lock(&sockmap_lock);
+  if (wsockmap.find(fd) != wsockmap.end())
+    {
+      std::string str = wsockmap[fd];
+      str.append(buff, len);
+      wsockmap[fd] = str;
+      pthread_mutex_unlock(&sockmap_lock);
+      return (0);
+    }
+  pthread_mutex_unlock(&sockmap_lock);
   
- retry:
-  int sent = send(fd, buff + offset, len - offset, 0);
+  //std::cerr << "Acquiring net lock..." << std::endl;
+  //pthread_mutex_lock(&net_lock);
+  //std::cerr << "Acquired net lock..." << std::endl;
+  
+  int sent = send(fd, buff, len, 0);
   if (sent < 0)
     {
-      std::cerr << std::string(errstr) << " FAILED at sending data after " << offset << " bytes when expected was " << len << std::endl;
-      exit(-1);
+      //std::cerr << std::string(errstr) << " FAILED at sending data after " << offset << " bytes when expected was " << len << std::endl;
+      //usleep(100);
+
+      pthread_mutex_lock(&sockmap_lock);
+      std::string str("");
+      str.append(buff, len);
+      wsockmap[fd] = str;
+      pthread_mutex_unlock(&sockmap_lock);
+      sent = 0;
     }
-  if (sent != len - offset)
+  else if (sent != len)
     {
-      offset += sent;
-      goto retry;
+
+      pthread_mutex_lock(&sockmap_lock);
+      std::string str("");
+      str.append(buff + sent, len - sent);
+      wsockmap[fd] = str;
+      pthread_mutex_unlock(&sockmap_lock);
+      // offset += sent;
     }
-  return (len);
+
+  // We sent everything - cleanup rsockmap for this socket
+  else
+    {
+      pthread_mutex_lock(&sockmap_lock);
+      wsockmap.erase(fd);
+      pthread_mutex_unlock(&sockmap_lock);
+    }
+  
+  //pthread_mutex_unlock(&net_lock);
+  //std::cerr << "Released net lock..." << std::endl;
+    
+  return (sent);
 }
 
 
@@ -201,18 +246,30 @@ int	async_send(int fd, char *buff, int len, const char *errstr)
 int	async_read(int fd, char *buff, int len, const char *errstr)
 {
   int	offset = 0;
+
+  //std::cerr << "Acquiring net lock..." << std::endl;
+  //pthread_mutex_lock(&net_lock);
+  //std::cerr << "Acquired net lock..." << std::endl;
   
  retry:
   int rd = read(fd, buff + offset, len - offset);
+  //  if (rd < 0 && errno == EINTR)
+  //  goto retry;
+  //if (rd < 0 && (errno == EGAIN || errno == EWOULDBLOCK)
   if (rd < 0)
     {
-      std::cerr << std::string(errstr) << " FAILED at reading data after " << offset << " bytes when expected was " << len << std::endl;
-      exit(-1);
+      // here add to the send cache and return
+      goto retry;
     }
   if (rd != len - offset)
     {
       offset += rd;
+      // here add to the send cache and return
       goto retry;
     }
+
+  //pthread_mutex_unlock(&net_lock);
+  //std::cerr << "Released net lock..." << std::endl;
+    
   return (len);
 }

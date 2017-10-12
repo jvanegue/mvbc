@@ -106,13 +106,12 @@ typedef std::map<std::string,block_t>	blockmap_t;
 typedef std::list<block_t>		blocklist_t;
 typedef std::pair<blocklist_t,blocklist_t> blocklistpair_t;
 typedef std::map<int,pthread_t>		threadmap_t;
-typedef std::map<int,bool>		sockmap_t;
+typedef std::map<int,std::string>	sockmap_t;
 
 // Data types depending on typedefs
 typedef struct		miner
 {
   pthread_t		tid;
-  //int			sock;
   mempool_t		pending;
 }			miner_t;
 
@@ -134,7 +133,7 @@ typedef struct		ctx
 
 typedef struct		job
 {
-  //unsigned char		type;
+  //unsigned char	type;
   ctx_t			context;  
 }			job_t;
 
