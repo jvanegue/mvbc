@@ -31,7 +31,7 @@ int parse(int argc, char **argv)
   while (index < argc)
     {
       str = argv[index];
-      if (!strcmp(str, "-bootstrap"))
+      if (!strcmp(str, "--bootstrap"))
 	{
 	  bootstrap = true;
 	  return (0);
