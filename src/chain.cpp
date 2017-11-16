@@ -18,7 +18,8 @@ bool		worker_get_hash(worker_t& worker, unsigned char next_height[32],
   unsigned char found_hash[32];
   int		ret = 0;
 
-  std::cerr << "ENTERED worker get hash" << std::endl;
+  std::cerr << "ENTERED worker get hash (worker.clients nbr# "
+	    << worker.clients.size() << ")" << std::endl;
   
   // Send message to ask for hash of ancestor
   FD_ZERO(&fds);
@@ -31,7 +32,7 @@ bool		worker_get_hash(worker_t& worker, unsigned char next_height[32],
 	max = sock;
       msg.hdr.opcode = OPCODE_GETHASH;
       memcpy(msg.height, next_height, 32);
-      async_send(sock, (char *) &msg, sizeof(msg), 0);
+      async_send(sock, (char *) &msg, sizeof(msg), 0, true);
     }
   
   // Check if anyone sent us the reply in the next 5 seconds
@@ -115,7 +116,7 @@ bool		worker_get_block(worker_t& worker, unsigned char next_height[32],
 	max = sock;
       msg.hdr.opcode = OPCODE_GETBLOCK;
       memcpy(msg.height, next_height, 32);
-      async_send(sock, (char *) &msg, sizeof(msg), 0);
+      async_send(sock, (char *) &msg, sizeof(msg), 0, false);
     }
   
   // Check if anyone sent us the reply in the next 5 seconds
@@ -182,30 +183,53 @@ bool		worker_get_block(worker_t& worker, unsigned char next_height[32],
 // Store new block in chain
 bool		chain_store(blockmsg_t msg, char *transdata, unsigned int numtxinblock, int port)
 {
-  std::cerr << "Trying to acquire chain lock" << std::endl;
+  //std::cerr << "Trying to acquire chain lock" << std::endl;
   pthread_mutex_lock(&chain_lock);
-  std::cerr << "Acquired chain lock" << std::endl;
+  //std::cerr << "Acquired chain lock" << std::endl;
   
   if (chain.size() == 0)
-    chain_accept_block(msg, transdata, numtxinblock, port);
+    {
+      std::string msgstr = tag2str(msg.height);
+      
+      std::cerr << "Entered chain store with msgstr = " << msgstr << std::endl;
+      
+      chain_accept_block(msg, transdata, numtxinblock, port);
+    }
   else
     {
       block_t top = chain.top();
       blockmsg_t tophdr = top.hdr;
+
+      std::string msgstr = tag2str(msg.height);
+      std::string topstr = tag2str(tophdr.height);
+      std::string msgprior = tag2str(msg.priorhash);
+      std::string topprior = tag2str(tophdr.priorhash);
+      
+      std::cerr << "Entered chain store with "
+		<< " msgstr   = " << msgstr
+		<< " topstr   = " << topstr
+		<< " msgprior = " << msgprior
+		<< " topprior = " << topprior
+		<< std::endl;
       
       if (memcmp(msg.height, tophdr.height, 32) == 0 &&
 	  memcmp(msg.priorhash, tophdr.priorhash, 32) == 0)
 	chain_merge_simple(msg, transdata, numtxinblock, top, port);
       
-      else if (smaller_than(msg.height, tophdr.height) &&
-	       memcmp(msg.priorhash, tophdr.priorhash, 32) != 0)
+      else if ((memcmp(tophdr.height, msg.height, 32) == 0 &&
+		memcmp(msg.priorhash, tophdr.priorhash, 32) != 0) || 
+	       smaller_than(tophdr.height, msg.height))
 	chain_merge_deep(msg, transdata, numtxinblock, top, port);
       
-      else if (smaller_than(tophdr.height, msg.height))
+      else if (smaller_than(msg.height, tophdr.height))
 	chain_propagate_only(msg, transdata, numtxinblock, port);
+
+      else
+	std::cerr << "Unknown case of chain merge! \n" << std::endl;
+      
     }
 
-  std::cerr << "Releasing chain lock" << std::endl;
+  //std::cerr << "Releasing chain lock" << std::endl;
   pthread_mutex_unlock(&chain_lock);
   return (true);
 }
@@ -327,6 +351,9 @@ bool		chain_accept_block(blockmsg_t msg, char *transdata,
   // Kill any existing miner and push new block on chain
   if (miner.tid)
     {
+
+      std::cout << "Killing miner tid = " << miner.tid << std::endl;
+      
       pthread_kill(miner.tid, SIGTERM);
       miner.tid = 0;
       
@@ -393,6 +420,9 @@ bool		chain_merge_simple(blockmsg_t msg, char *transdata,
   // Kill any existing miner and push new block on chain
   if (miner.tid)
     {
+
+      std::cout << "Killing miner tid = " << miner.tid << std::endl;
+      
       pthread_kill(miner.tid, SIGTERM);
       miner.tid = 0;
       
@@ -404,6 +434,7 @@ bool		chain_merge_simple(blockmsg_t msg, char *transdata,
       thread_create();
       
       newtop.hdr = msg;
+      newtop.trans = (transdata_t *) transdata;
       
       chain.push(newtop);
       std::string height = tag2str(newtop.hdr.height);
@@ -415,12 +446,15 @@ bool		chain_merge_simple(blockmsg_t msg, char *transdata,
   else
     {
       newtop.hdr = msg;
+      newtop.trans = (transdata_t *) transdata;
       chain.push(newtop);
       std::string height = tag2str(newtop.hdr.height);
       bmap[height] = newtop;
       
       std::cerr << "Accepted block on the chain - no miner was currently running" << std::endl;
     }
+
+
 
   // Sync the transaction pool and account to reflect the new state of the chain
   blocklist_t removed;
@@ -445,6 +479,9 @@ bool			chain_merge_deep(blockmsg_t msg, char *transdata,
   
   if (miner.tid)
     {
+
+      std::cout << "Killing miner tid = " << miner.tid << std::endl;
+      
       pthread_kill(miner.tid, SIGTERM);
       miner.tid = 0;
       pthread_mutex_lock(&transpool_lock);
@@ -500,11 +537,11 @@ bool	chain_propagate_only(blockmsg_t msg, char *transdata,
 	  remote_t remote = it->second;
 
 	  char opcode = OPCODE_SENDTRANS;
-	  async_send(remote.client_sock, &opcode, 1, "Propagate opcode on remote");
+	  async_send(remote.client_sock, &opcode, 1, "Propagate opcode on remote", false);
 	  async_send(remote.client_sock, (char *) curdata,
-		     sizeof(transmsg_t), "Propagate transaction on remote");
+		     sizeof(transmsg_t), "Propagate transaction on remote", false);
 	  
-	  std::cerr << "Propagated trans to remote port " << remote.remote_port << std::endl;
+	  //std::cerr << "Propagated trans to remote port " << remote.remote_port << std::endl;
 	}
     }
   

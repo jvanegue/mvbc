@@ -36,7 +36,9 @@ static int reset_fdsets(int boot_sock)
 {
   int max = 0;
 
+  FD_ZERO(&writeset);
   FD_ZERO(&readset);
+  
   if (boot_sock != 0)
     {
       FD_SET(boot_sock, &readset);
@@ -48,26 +50,55 @@ static int reset_fdsets(int boot_sock)
       int cursock = it->second.serv_sock;
       if (cursock > max)
 	max = cursock;
+
       FD_SET(cursock, &readset);
       for (std::list<int>::iterator cit = it->second.clients.begin();
 	   cit != it->second.clients.end(); cit++)
 	{
 	  int cursock = *cit;
-	  if (cursock > max)
-	    max = cursock;
-	  FD_SET(cursock, &readset);
+
+	  if (rsockmap.find(cursock) == rsockmap.end())
+	    {
+	      //std::cout << "worker clients read sock FD_SET " << cursock << std::endl;
+	      FD_SET(cursock, &readset);
+	      if (cursock > max)
+		max = cursock;  
+	    }
+
+	  if (wsockmap.find(cursock) != wsockmap.end())
+	    {
+	      FD_SET(cursock, &writeset);
+	      if (cursock > max)
+		max = cursock;  
+	    }
+	  
 	}
     }
 
   for (clientmap_t::iterator cit = clientmap.begin(); cit != clientmap.end(); cit++)
     {
       int cursock = cit->second.client_sock;
-      if (cursock > max)
-	max = cursock;
-      FD_SET(cursock, &readset);
+
+      if (rsockmap.find(cursock) == rsockmap.end())
+	{
+	  if (cursock > max)
+	    max = cursock;
+	  //std::cout << "clientmap read sock FD_SET " << cursock << std::endl;
+	  FD_SET(cursock, &readset);
+	}
+
+      if (wsockmap.find(cursock) != wsockmap.end())
+	{
+	  FD_SET(cursock, &writeset);
+	  if (cursock > max)
+	    max = cursock;
+	}
+
+      
     }
   max = max + 1;
-  writeset = readset;
+
+  //std::cerr << "Recomputed select sets" << std::endl;
   return (max);
 }
 
@@ -85,7 +116,7 @@ static int	client_connect(int port, remote_t &remote)
   if (client_sock < 0)
     FATAL("client_connect socket");
 
-  std::cerr << "Connecting client on port " << port << std::endl;
+  std::cerr << "Connecting client on port " << port << " socket " << client_sock << std::endl;
   
   // Connect to bootstrap
   caddr.sin_family = AF_INET;
@@ -182,7 +213,7 @@ static void	bootnode_update(int boot_sock)
       clientmap_t::iterator it = clientmap.find(port);
 
       // is this correct?
-      /*
+      /**/
       if (workermap.find(port) != workermap.end())
 	{
 	  std::cerr << "PORT " << port << " is a local worker - do not establish remote"
@@ -190,7 +221,7 @@ static void	bootnode_update(int boot_sock)
 	}
       else
 	// is this correct?
-	*/
+	/**/
       
 	if (it == clientmap.end())
 	{
@@ -229,8 +260,10 @@ static int		worker_update(int port)
   socklen_t		clen;
 
   std::cerr << "worker update: now accepting connection on port "
-	    << port << " socket = " << worker.serv_sock << std::endl;
-  
+	    << port << " srv socket = " << worker.serv_sock << std::endl;
+
+  memset(&client, 0x00, sizeof(client));
+  clen = 0;
   int			csock = accept(worker.serv_sock, (struct sockaddr *) &client, &clen);
 
   if (csock < 0)
@@ -241,13 +274,15 @@ static int		worker_update(int port)
 	  return (0);
 	}
       
-      std::cerr << "Failure o accept on socket: " << worker.serv_sock << std::endl;
+      std::cerr << "Failure to accept on socket: " << worker.serv_sock << std::endl;
       FATAL("Failed accept on worker server socket");
     }
-
-  std::cerr << "worker update: accepted connection on port " << port << std::endl;
   
   worker.clients.push_back(csock);
+
+  std::cerr << "worker update: accepted conx. Adding socket " << csock << " port " << port
+	    << " to worker.clients list, now has " << worker.clients.size() << " elms" << std::endl;
+  
   workermap[port] = worker;
   return (0);
 }
@@ -271,25 +306,31 @@ static int	miner_update(worker_t *worker, blockmsg_t newblock, char *data, int n
 	  continue;
 	}
       std::cerr << "Sending block to remote on port " << remote.remote_port << std::endl;
-      async_send(remote.client_sock, &c, 1, "Miner update");
-      async_send(remote.client_sock, (char *) &newblock, sizeof(newblock), "Miner update 2");
-      async_send(remote.client_sock, (char *) data, sizeof(transdata_t) * numtxinblock, "Miner update 3");
+      async_send(remote.client_sock, &c, 1,
+		 "Miner update", false);
+      async_send(remote.client_sock, (char *) &newblock, sizeof(newblock),
+		 "Miner update 2", false);
+      async_send(remote.client_sock, (char *) data, sizeof(transdata_t) * numtxinblock,
+		 "Miner update 3", false);
     }
 
   // Make sure nobody can touch the chain while we execute transaction and stack new block
-  std::cerr << "Acquiring chain lock..." << std::endl;
+  //std::cerr << "Acquiring chain lock..." << std::endl;
   pthread_mutex_lock(&chain_lock);
-  std::cerr << "Acquired chain lock..." << std::endl;
+  //std::cerr << "Acquired chain lock..." << std::endl;
 
   // Transactions are marked as past instead of pending
-  std::cerr << "Acquiring trans lock..." << std::endl;
+  //std::cerr << "Acquiring trans lock..." << std::endl;
   pthread_mutex_lock(&transpool_lock);
-  std::cerr << "Acquired trans lock..." << std::endl;
-  
+  //std::cerr << "Acquired trans lock..." << std::endl;
+
+  // Always clean past transpool before it gets too big
+  // e.g. past transpool contains only most recent past block
+  past_transpool.clear();
   past_transpool.insert(worker->miner.pending.begin(), worker->miner.pending.end());
   worker->miner.pending.clear();
 
-  std::cerr << "Releasing translock..." << std::endl;
+  //std::cerr << "Releasing translock..." << std::endl;
   pthread_mutex_unlock(&transpool_lock);
   
   // Execute all transactions of the block
@@ -322,7 +363,7 @@ static int	miner_update(worker_t *worker, blockmsg_t newblock, char *data, int n
   std::cerr << "STATS:" << curheight << "," << since_first_block << std::endl;
 
   // Done updating the chain
-  std::cerr << "Releasing chain lock..." << std::endl;
+  //std::cerr << "Releasing chain lock..." << std::endl;
   pthread_mutex_unlock(&chain_lock);
   
   return (0);
@@ -351,12 +392,12 @@ int		do_mine(worker_t *worker, int difficulty, int numtxinblock)
   
   newminer.tid = pthread_self();
 
-  std::cerr << "Acquiring trans lock..." << std::endl;
+  //std::cerr << "Acquiring trans lock..." << std::endl;
   pthread_mutex_lock(&transpool_lock);
-  std::cerr << "Acquired trans lock..." << std::endl;
+  //std::cerr << "Acquired trans lock..." << std::endl;
   newminer.pending.insert(transpool.begin(), transpool.end());
   transpool.clear();
-  std::cerr << "Releasing transpool lock..." << std::endl;
+  //std::cerr << "Releasing transpool lock..." << std::endl;
   pthread_mutex_unlock(&transpool_lock);
 
   worker->miner = newminer;
@@ -416,6 +457,7 @@ int		do_mine(worker_t *worker, int difficulty, int numtxinblock)
   std::cerr << "WORKER on port " << worker->serv_port << " MINED BLOCK!" << std::endl;
   
   miner_update(worker, newblock, ((char *) buff) + sizeof(blockhash_t), numtxinblock);
+  worker->miner.tid = 0;
   
   // Return to main loop
   return (0);
@@ -426,7 +468,8 @@ int		do_mine(worker_t *worker, int difficulty, int numtxinblock)
 
 // Treat traffic from existing worker's clients
 // Could be transaction or block messages usually
-static int	client_update(worker_t *worker, int client_sock, unsigned int numtxinblock, int difficulty)
+static int	client_update(worker_t *worker, int client_sock,
+			      unsigned int numtxinblock, int difficulty)
 {
   char		blockheight[32];
   std::string	height;
@@ -436,9 +479,21 @@ static int	client_update(worker_t *worker, int client_sock, unsigned int numtxin
   blockmsg_t	block;
   char		*transdata = NULL;
   block_t	blk;
+
+  //std::cerr << "Client update (curpool sz = " << transpool.size()
+  // << " pastpool sz = " << past_transpool.size() << ")" << std::endl;
+  /*
+  if (transpool.size() % 1000 == 0)
+    {
+      putchar('.');
+      fflush(stdout);
+    }
+  */
   
   int len = async_read(client_sock, (char *) &opcode, 1, "READ opcode in client update failed");
-  if (len != 1)
+  if (len == 0)
+    return (-1);
+  else if (len != 1)
     FATAL("FAILED client update read");
 
   switch (opcode)
@@ -460,10 +515,14 @@ static int	client_update(worker_t *worker, int client_sock, unsigned int numtxin
     case OPCODE_SENDBLOCK:
       std::cerr << "SENDBLOCK OPCODE " << std::endl;
       len = async_read(client_sock, (char *) &block, sizeof(block), "sendblock read (1)");
+      if (len != (int) sizeof(block))
+      	FATAL("Not enough bytes in SENDBLOCK message 1");
       transdata = (char *) malloc(numtxinblock * 128);
       if (transdata == NULL)
 	FATAL("SENDBLOCK malloc");
       len = async_read(client_sock, (char *) transdata, numtxinblock * 128, "sendblock read (2)");
+      if (len != (int) numtxinblock * 128)
+      	FATAL("Not enough bytes in SENDBLOCK message 2");
       chain_store(block, transdata, numtxinblock, worker->serv_port);
       return (0);
       break;
@@ -481,9 +540,9 @@ static int	client_update(worker_t *worker, int client_sock, unsigned int numtxin
 	  return (0);
 	}
       blk = bmap[height];
-      async_send(client_sock, (char *) &blk.hdr, sizeof(blk.hdr), "GETBLOCK send 1");
+      async_send(client_sock, (char *) &blk.hdr, sizeof(blk.hdr), "GETBLOCK send 1", false);
       async_send(client_sock, (char *) blk.trans, sizeof(transdata_t) * numtxinblock,
-		 "GETBLOCK send 2");
+		 "GETBLOCK send 2", false);
       break;
 
       // Get hash opcode
@@ -499,7 +558,7 @@ static int	client_update(worker_t *worker, int client_sock, unsigned int numtxin
 	  return (0);
 	}
       blk = bmap[height];
-      async_send(client_sock, (char *) blk.hdr.hash, 32, "GETHASH send");
+      async_send(client_sock, (char *) blk.hdr.hash, 32, "GETHASH send", false);
       break;
 
       // Send ports opcode (only sent via boot node generally)
@@ -568,6 +627,8 @@ void	  execute_worker(unsigned int numtxinblock, unsigned int difficulty,
   if (boot_sock < 0)
     FATAL("socket");
 
+  std::cout << "Bootsock " << boot_sock << std::endl;
+  
   // Connect to bootstrap
   caddr.sin_family = AF_INET;
   caddr.sin_port = htons(8888);
@@ -600,7 +661,8 @@ void	  execute_worker(unsigned int numtxinblock, unsigned int difficulty,
       struct sockaddr_in saddr;
       int port = *it;
 
-      std::cerr << "Worker now binding server socket on port " << port << std::endl;
+      std::cerr << "Worker now binding server socket " << serv_sock
+		<< " on port " << port << std::endl;
       
       saddr.sin_family = AF_INET;
       saddr.sin_port = htons(port);
@@ -625,7 +687,7 @@ void	  execute_worker(unsigned int numtxinblock, unsigned int difficulty,
       // Advertize new worker to bootstrap node
       bootmsg_t msg;
       pack_bootmsg(port, &msg);
-      async_send(boot_sock, (char *) &msg, sizeof(msg), "BOOTMSG");
+      async_send(boot_sock, (char *) &msg, sizeof(msg), "BOOTMSG", false);
     }
 
   // Create all threads
@@ -636,19 +698,32 @@ void	  execute_worker(unsigned int numtxinblock, unsigned int difficulty,
   while (1)
     {
       
+      struct timeval tv;
+      tv.tv_sec = 0;
+      tv.tv_usec = 1;
+      
       // Reset the read set
       max = reset_fdsets(boot_sock);
       int ret = 0;
-      do { ret = select(max, &readset, &writeset, NULL, NULL); }
-      while (ret == -1 && errno == EINTR); 
+
+      //std::cerr << "Calling select with max = " << max << std::endl;
+      
+      do { ret = select(max, &readset, &writeset, NULL, &tv); }
+      while (ret == -1 && errno == EINTR);
+      if (ret == 0)
+	continue;
       if (ret == -1)
 	FATAL("select");
 
+      //std::cout << "Unblocked with select ret = " << ret << std::endl;
+      
       // Will possibly update the remote map if boot node advertize new nodes
       if (boot_sock != 0 && FD_ISSET(boot_sock, &readset))
 	{
 	  unsigned char opcode;
 
+	  std::cerr << "Unblocked on boot sock" << std::endl;
+	  
 	retry:
 	  ret = read(boot_sock, &opcode, 1);
 	  if (ret == 0)
@@ -671,6 +746,9 @@ void	  execute_worker(unsigned int numtxinblock, unsigned int difficulty,
 	  int serv_sock = it->second.serv_sock;
 	  if (FD_ISSET(serv_sock, &readset))
 	    {
+
+	      std::cerr << "Unblocked on server sock" << std::endl;
+	      
 	      ret = worker_update(it->first);
 	      if (ret < 0)
 		FATAL("worker_update");
@@ -686,9 +764,12 @@ void	  execute_worker(unsigned int numtxinblock, unsigned int difficulty,
 	      pthread_mutex_lock(&sockmap_lock);
 	      //std::cerr << "Acquired sockm lock..." << std::endl;
 
-	      // Treat traffic outbound when sockets can be sent more data
+	      // Treat traffic outbound when sockets can be sent more data and we have data waiting
 	      if (FD_ISSET(client_sock, &writeset) && wsockmap.find(client_sock) != wsockmap.end())
 		{
+
+		  //std::cerr << "Unblocked on writable client sock " << client_sock << std::endl;
+		  
 		  std::string tosend = wsockmap[client_sock];
 		  int sent = send(client_sock, tosend.c_str(), tosend.size(), 0);
 		  if (sent < 0)
@@ -698,10 +779,19 @@ void	  execute_worker(unsigned int numtxinblock, unsigned int difficulty,
 		  else
 		    wsockmap.erase(client_sock);
 		}
+
+	      // debug only
+	      else if (FD_ISSET(client_sock, &writeset))
+		std::cout << "client_sock " << client_sock
+			  << " is SET but wsockmap indicates no data to send" << std::endl;
 	      
-	      // Treat sockets for read - dont create job if rsockmap is already market for that client
+	      // Treat sockets for read
+	      // Dont create job if rsockmap is already market for that client
 	      if (FD_ISSET(client_sock, &readset) && rsockmap.find(client_sock) == rsockmap.end())
 		{
+
+		  //std::cerr << "Unblocked on readable client sock " << client_sock << std::endl;
+		  
 		  job_t	job;
 		  ctx_t	ctx;
 		  ctx.worker = &it->second;
@@ -714,16 +804,14 @@ void	  execute_worker(unsigned int numtxinblock, unsigned int difficulty,
 		  pthread_mutex_unlock(&job_lock);
 		  //pthread_cond_broadcast(&job_cond);
 		  rsockmap[client_sock] = "ready";
+		  
 		  //std::cerr << "Queued job" << std::endl;
 		}
 
 	      // debug only
-	      /*
-	      else if (FD_ISSET(client_sock, &readset) && rsockmap.find(client_sock) != rsockmap.end())
-		std::cerr << "Data ready to read on socket " << client_sock << " but sockmap is already marked!" << std::endl;
-	      else if (FD_ISSET(client_sock, &writeset) && wsockmap.find(client_sock) == wsockmap.end())
-		std::cerr << "Data ready to write on socket " << client_sock << " but sockmap is empty for it" << std::endl;
-	      */
+	      else if (FD_ISSET(client_sock, &readset))
+		std::cerr << "client_sock " << client_sock
+			  << " is SET but rsockmap already marked for it" << std::endl;
 	      
 	      //std::cerr << "Releasing sockm lock..." << std::endl;
 	      pthread_mutex_unlock(&sockmap_lock);
@@ -764,28 +852,36 @@ void*		thread_start(void *null)
 	{
 	  //std::cerr << "Empty job queue - Releasing job lock..." << std::endl;
 	  pthread_mutex_unlock(&job_lock);
+	  //sleep(1);
 	  continue;
 	}
       next = jobq.front();
       jobq.pop();
 
       //std::cerr << "Picked up job" << std::endl;
-      
       //std::cerr << "Releasing job lock..." << std::endl;
+      
       pthread_mutex_unlock(&job_lock);
 
       // Treat the job
-      ret = client_update(next.context.worker, next.context.sock, next.context.numtxinblock, next.context.difficulty);
+      ret = client_update(next.context.worker, next.context.sock,
+			  next.context.numtxinblock, next.context.difficulty);
+
+      // This shows up when the socket was closed
       if (ret < 0)
 	{
-	  std::cerr << "Error during client update" << std::endl;
+	  std::cerr << "Client update was a close (removing sock "
+		    << next.context.sock << " from client list)" << std::endl;
 	  close(next.context.sock);
 	  FD_CLR(next.context.sock, &readset);
 	  next.context.worker->clients.remove(next.context.sock);
 	}
+
+      // This is only for SENDPORT - we close the socket after such request
       else if (ret == 1)
 	{
-	  std::cerr << "Removed client from worker clients list socket " << next.context.sock << std::endl;
+	  std::cerr << "Removed client from worker clients list socket "
+		    << next.context.sock << std::endl;
 	  close(next.context.sock);
 	  FD_CLR(next.context.sock, &readset);
 	  next.context.worker->clients.remove(next.context.sock);

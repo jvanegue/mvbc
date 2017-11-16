@@ -86,7 +86,7 @@ int		trans_verify(worker_t *worker,
       remote_t remote = it->second;
 
       async_send(remote.client_sock, (char *) &trans,
-		 sizeof(transmsg_t), "Send transaction on remote");
+		 sizeof(transmsg_t), "Send transaction on remote", false);
       
       //std::cerr << "Sent transaction to remote port " << remote.remote_port << std::endl;
     }
@@ -116,28 +116,28 @@ int		trans_sync(blocklist_t added, blocklist_t removed, unsigned int numtxinbloc
 {
   unsigned int	nbr;
 
+  std::cerr << "TRANS SYNC with " << added.size() << " added blocks and " << removed.size() << " removed blocks " << std::endl;
+  
   // Go over the removed blocks and revert all transactions
   for (blocklist_t::iterator it = removed.begin(); it != removed.end(); it++)
     {
-      block_t curblock = *it;  
-
+      block_t curblock = *it;
+	  
+      // True == revert
+      nbr = trans_exec(curblock.trans, numtxinblock, true);
+      if (nbr != numtxinblock)
+	std::cerr << "NOTE: Unable to revert all transactions from removed block" << std::endl;
+      
       for (unsigned int idx = 0; idx < numtxinblock; idx++)
 	{
 	  transdata_t *curdata = curblock.trans + idx;
 	  transmsg_t  msg;
-	  
-	  // True == revert
-	  nbr = trans_exec(curdata, numtxinblock, true);
-	  if (nbr != numtxinblock)
-	    std::cerr << "NOTE: Unable to revert all transactions from removed block" << std::endl;
-	  
 	  std::string transkey = hash_binary_to_string(curdata->sender) +
 	    hash_binary_to_string(curdata->receiver) +
 	    hash_binary_to_string(curdata->amount) +
 	    hash_binary_to_string(curdata->timestamp);
 
 	  // If this is not already in the transpool, add it back
-	  
 	  pthread_mutex_lock(&transpool_lock);
 
 	  if (transpool.find(transkey) == transpool.end())
@@ -146,10 +146,7 @@ int		trans_sync(blocklist_t added, blocklist_t removed, unsigned int numtxinbloc
 	      msg.data = *curdata;
 	      transpool[transkey] = msg;
 	    }
-
-	  pthread_mutex_unlock(&transpool_lock);
-
-	  
+	  pthread_mutex_unlock(&transpool_lock);	  
 	}
     }
   
@@ -157,7 +154,6 @@ int		trans_sync(blocklist_t added, blocklist_t removed, unsigned int numtxinbloc
   for (blocklist_t::iterator it = added.begin(); it != added.end(); it++)
     {
       block_t& curblock = *it;
-      
       // Execute all transactions of the block 
       nbr = trans_exec(curblock.trans, numtxinblock, false);
       if (nbr != numtxinblock)
@@ -168,16 +164,13 @@ int		trans_sync(blocklist_t added, blocklist_t removed, unsigned int numtxinbloc
 	{
 	  transdata_t *curdata = curblock.trans + idx;
 	  transmsg_t  msg;
-	  
 	  std::string transkey = hash_binary_to_string(curdata->sender) +
 	    hash_binary_to_string(curdata->receiver) +
 	    hash_binary_to_string(curdata->amount) +
 	    hash_binary_to_string(curdata->timestamp);
 
 	  // Remove all duplicate transactions from the transpool
-
 	  pthread_mutex_lock(&transpool_lock);
-	  
 	  if (transpool.find(transkey) != transpool.end())
 	    {
 	      msg = transpool[transkey];
@@ -190,10 +183,7 @@ int		trans_sync(blocklist_t added, blocklist_t removed, unsigned int numtxinbloc
 	      msg.data = *curdata;
 	      past_transpool[transkey] = msg;
 	    }
-
 	  pthread_mutex_unlock(&transpool_lock);
-
-	  
 	}
     }
   
@@ -211,6 +201,8 @@ int		trans_exec(transdata_t *data, int numtxinblock, bool revert)
 {
   int		idx;
   int		nbr;
+
+  std::cerr << "Execute all transactions in block (reverted = " << revert << ")" << std::endl;
   
   // Update wallets amount values
   for (nbr = idx = 0; idx < numtxinblock; idx++)

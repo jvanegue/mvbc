@@ -181,7 +181,7 @@ void		wallet_print(const char *prefix, unsigned char sender[32],
 			     unsigned char amount[32], unsigned char receiver[32]);
 std::string	tag2str(unsigned char str[32]);
 bool		is_zero(unsigned char tag[32]);
-int		async_send(int fd, char *buff, int len, const char *errstr);
+int		async_send(int fd, char *buff, int len, const char *errstr, bool verb);
 int		async_read(int fd, char *buff, int len, const char *errstr);
 
 // Transaction related functions
