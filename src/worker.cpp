@@ -14,10 +14,12 @@ pthread_mutex_t transpool_lock = PTHREAD_MUTEX_INITIALIZER;
 
 // The block chain is also indexed in a map for faster access by height
 blockchain_t	chain;
-blockmap_t	bmap;
 pthread_mutex_t chain_lock = PTHREAD_MUTEX_INITIALIZER;
 
-// Some global timers for statistics purpose
+// The block map - not under any lock right now
+blockmap_t	bmap;
+
+// Some global timers for statistics purpose - no lock
 time_t		time_first_block = 0;
 time_t		time_last_block = 0;
 
@@ -27,9 +29,11 @@ jobqueue_t	jobq;
 pthread_mutex_t job_lock = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t	job_cond = PTHREAD_COND_INITIALIZER;
 
+// Read and Write caches
 pthread_mutex_t sockmap_lock = PTHREAD_MUTEX_INITIALIZER;
 sockmap_t	rsockmap;
 sockmap_t	wsockmap;
+
 
 // Helper function to reset socket readset for selects
 static int reset_fdsets(int boot_sock)
@@ -37,8 +41,7 @@ static int reset_fdsets(int boot_sock)
   int max = 0;
 
   FD_ZERO(&writeset);
-  FD_ZERO(&readset);
-  
+  FD_ZERO(&readset);  
   if (boot_sock != 0)
     {
       FD_SET(boot_sock, &readset);
@@ -70,15 +73,13 @@ static int reset_fdsets(int boot_sock)
 	      FD_SET(cursock, &writeset);
 	      if (cursock > max)
 		max = cursock;  
-	    }
-	  
+	    }	  
 	}
     }
-
+  
   for (clientmap_t::iterator cit = clientmap.begin(); cit != clientmap.end(); cit++)
     {
       int cursock = cit->second.client_sock;
-
       if (rsockmap.find(cursock) == rsockmap.end())
 	{
 	  if (cursock > max)
@@ -86,15 +87,12 @@ static int reset_fdsets(int boot_sock)
 	  //std::cout << "clientmap read sock FD_SET " << cursock << std::endl;
 	  FD_SET(cursock, &readset);
 	}
-
       if (wsockmap.find(cursock) != wsockmap.end())
 	{
 	  FD_SET(cursock, &writeset);
 	  if (cursock > max)
 	    max = cursock;
 	}
-
-      
     }
   max = max + 1;
 
@@ -279,6 +277,7 @@ static int		worker_update(int port)
     }
   
   worker.clients.push_back(csock);
+  worker_zero_state(worker);
 
   std::cerr << "worker update: accepted conx. Adding socket " << csock << " port " << port
 	    << " to worker.clients list, now has " << worker.clients.size() << " elms" << std::endl;
@@ -305,7 +304,8 @@ static int	miner_update(worker_t *worker, blockmsg_t newblock, char *data, int n
 	  std::cerr << "Do not send the block to yourself - passing" << std::endl;
 	  continue;
 	}
-      std::cerr << "Sending block to remote on port " << remote.remote_port << std::endl;
+      std::cerr << "Sending block to remote on sock " << remote.client_sock
+		<< " no port " << remote.remote_port << std::endl;
       async_send(remote.client_sock, &c, 1,
 		 "Miner update", false);
       async_send(remote.client_sock, (char *) &newblock, sizeof(newblock),
@@ -464,12 +464,9 @@ int		do_mine(worker_t *worker, int difficulty, int numtxinblock)
 }
 
 
-
-
-// Treat traffic from existing worker's clients
-// Could be transaction or block messages usually
-static int	client_update(worker_t *worker, int client_sock,
-			      unsigned int numtxinblock, int difficulty)
+// Go ahead and listen to new requests
+static int	client_update_new(worker_t *worker, int client_sock,
+				  unsigned int numtxinblock, int difficulty)
 {
   char		blockheight[32];
   std::string	height;
@@ -479,16 +476,6 @@ static int	client_update(worker_t *worker, int client_sock,
   blockmsg_t	block;
   char		*transdata = NULL;
   block_t	blk;
-
-  //std::cerr << "Client update (curpool sz = " << transpool.size()
-  // << " pastpool sz = " << past_transpool.size() << ")" << std::endl;
-  /*
-  if (transpool.size() % 1000 == 0)
-    {
-      putchar('.');
-      fflush(stdout);
-    }
-  */
   
   int len = async_read(client_sock, (char *) &opcode, 1, "READ opcode in client update failed");
   if (len == 0)
@@ -574,6 +561,35 @@ static int	client_update(worker_t *worker, int client_sock,
     }
   
   return (0);
+}
+
+
+// Treat traffic from existing worker's clients
+// Could be transaction or block messages usually
+static int	client_update(worker_t *worker, int client_sock,
+			      unsigned int numtxinblock, int difficulty)
+{
+  int		ret = -1;
+
+  switch (worker->state.chain_state)
+    {
+    case CHAIN_READY_FOR_NEW:
+      memset(&worker->state, 0x00, sizeof(worker->state));
+      ret = client_update_new(worker, client_sock, numtxinblock, difficulty);
+      break;
+    case CHAIN_WAITING_FOR_HASH:
+      std::cout << "client_update: UPDATE GETHASH state" << std::endl;
+      ret = chain_gethash(worker, client_sock, numtxinblock, difficulty);
+      break;
+    case CHAIN_WAITING_FOR_BLOCK:
+      std::cout << "client_update: UPDATE GETBLOCK state" << std::endl;
+      ret = chain_getblock(worker, client_sock, numtxinblock, difficulty);
+      break;
+    default:
+      std::cerr << "Chain: unknown state" << std::endl;
+    }  
+
+  return (ret);
 }
 
 
@@ -790,7 +806,7 @@ void	  execute_worker(unsigned int numtxinblock, unsigned int difficulty,
 	      if (FD_ISSET(client_sock, &readset) && rsockmap.find(client_sock) == rsockmap.end())
 		{
 
-		  //std::cerr << "Unblocked on readable client sock " << client_sock << std::endl;
+		  std::cerr << "Unblocked on readable client sock " << client_sock << std::endl;
 		  
 		  job_t	job;
 		  ctx_t	ctx;
@@ -809,15 +825,17 @@ void	  execute_worker(unsigned int numtxinblock, unsigned int difficulty,
 		}
 
 	      // debug only
+	      
 	      else if (FD_ISSET(client_sock, &readset))
 		std::cerr << "client_sock " << client_sock
 			  << " is SET but rsockmap already marked for it" << std::endl;
+	      
 	      
 	      //std::cerr << "Releasing sockm lock..." << std::endl;
 	      pthread_mutex_unlock(&sockmap_lock);
 	    }
 	}
-
+      
     }
 
 }
@@ -886,8 +904,6 @@ void*		thread_start(void *null)
 	  FD_CLR(next.context.sock, &readset);
 	  next.context.worker->clients.remove(next.context.sock);
 	}
-
-      //std::cerr << "Done with job" << std::endl;
       
       // Mark this socket as not waiting for more job
       //std::cerr << "Acquiring job lock..." << std::endl;
@@ -896,6 +912,8 @@ void*		thread_start(void *null)
       rsockmap.erase(next.context.sock);
       //std::cerr << "Released sockm lock..." << std::endl;
       pthread_mutex_unlock(&sockmap_lock);
+
+      std::cerr << "Done with job on sock " << next.context.sock << std::endl;      
     }
 
   return (NULL);

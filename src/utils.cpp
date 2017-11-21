@@ -25,6 +25,10 @@ std::string	hash_binary_to_string(unsigned char hash[32])
   return (key);
 }
 
+std::string	hash2str(unsigned char hash[32])
+{
+  return (hash_binary_to_string(hash));
+}
 
 // Compare two integers stored on 32B arrays
 bool	smaller_than(unsigned char first[32], unsigned char second[32])
@@ -183,11 +187,26 @@ void	string_integer_increment(char *buff, int len)
   std::cerr << "Account amount INC overflow! - ignored..." << std::endl;
 }
 
+// Increment integer in 32B encoding 
+void	string_integer_decrement(char *buff, int len)
+{
+  
+  for (int index = len - 1; index >= 0; index--)
+    if (buff[index] != '0')
+      {
+	buff[index]--;
+	return;
+      }
+    else
+      buff[index] = '9';
+
+  std::cerr << "Account amount INC overflow! - ignored..." << std::endl;
+}
+
 
 // Perform asynchronous send with retry until socket is ready
 int	async_send(int fd, char *buff, int len, const char *errstr, bool verb)
 {
-  //int	offset = 0;
 
   // If there is already data pending, just append to it instead of trying to send
   pthread_mutex_lock(&sockmap_lock);
@@ -199,17 +218,15 @@ int	async_send(int fd, char *buff, int len, const char *errstr, bool verb)
       pthread_mutex_unlock(&sockmap_lock);
 
       if (verb)
-	std::cerr << "data to send was cached in outbound wsockmap" << std::endl;
-      
+	std::cerr << "data to send on sock " << fd
+		  << " was cached in outbound wsockmap" << std::endl;
       return (0);
     }
   pthread_mutex_unlock(&sockmap_lock);
-  
-  //std::cerr << "Acquiring net lock..." << std::endl;
-  //pthread_mutex_lock(&net_lock);
-  //std::cerr << "Acquired net lock..." << std::endl;
-  
+
   int sent = send(fd, buff, len, 0);
+
+  // Send failure - report error
   if (sent < 0)
     {
       //std::cerr << std::string(errstr) << " FAILED at sending data after "
@@ -222,11 +239,14 @@ int	async_send(int fd, char *buff, int len, const char *errstr, bool verb)
       wsockmap[fd] = str;
 
       if (verb)
-	std::cerr << "data to send was cached in outbound wsockmap after failed send" << std::endl;
+	std::cerr << "data send on sock " << fd
+		  << " was cached in outbound wsockmap after failed send" << std::endl;
       
       pthread_mutex_unlock(&sockmap_lock);
       sent = 0;
     }
+
+  // Partial send - we will be back
   else if (sent != len)
     {
 
@@ -236,10 +256,10 @@ int	async_send(int fd, char *buff, int len, const char *errstr, bool verb)
       wsockmap[fd] = str;
 
       if (verb)
-	std::cerr << "data to send was partially cached in outbound wsockmap" << std::endl;
+	std::cerr << "data to send on sock " << fd
+		  << " was partially cached in outbound wsockmap" << std::endl;
       
       pthread_mutex_unlock(&sockmap_lock);
-      // offset += sent;
     }
 
   // We sent everything - cleanup rsockmap for this socket
@@ -248,14 +268,12 @@ int	async_send(int fd, char *buff, int len, const char *errstr, bool verb)
       pthread_mutex_lock(&sockmap_lock);
 
       if (verb)
-	std::cerr << "data was fully sent - closing sock" << std::endl;
+	std::cerr << "data on sock " << fd
+		  << " was fully sent - returning." << std::endl;
       
       wsockmap.erase(fd);
       pthread_mutex_unlock(&sockmap_lock);
     }
-  
-  //pthread_mutex_unlock(&net_lock);
-  //std::cerr << "Released net lock..." << std::endl;
     
   return (sent);
 }
@@ -276,7 +294,7 @@ int	async_read(int fd, char *buff, int len, const char *errstr)
   //  if (rd < 0 && errno == EINTR)
   //  goto retry;
   //if (rd < 0 && (errno == EGAIN || errno == EWOULDBLOCK)
-  if (rd == 0 && errno != EWOULDBLOCK)
+  if (rd == 0 && errno != EWOULDBLOCK && errno != EAGAIN && errno != EINTR)
     return (0);
   
   if (rd < 0)

@@ -93,7 +93,6 @@ typedef struct		 account
    unsigned char	 amount[32];
 }			 account_t;
 
-
 // Typedefs
 typedef unsigned long long int		ullint;
 typedef unsigned int			uint;
@@ -115,11 +114,35 @@ typedef struct		miner
   mempool_t		pending;
 }			miner_t;
 
+
+// State machine for chain synchronization
+typedef enum	chain_state 
+  {
+    CHAIN_READY_FOR_NEW = 0,
+    CHAIN_WAITING_FOR_HASH,
+    CHAIN_WAITING_FOR_BLOCK,
+  }		state_e;
+
+// This is a per-worker state machine data
+typedef struct		s_state
+{
+  blocklist_t		added;
+  blocklist_t		dropped;
+  unsigned char		expected_height[32]; // We know we fully synced once we found this one
+  unsigned char		working_height[32];  // Currently looking up at his height
+  int			chain_state;
+  char			*recv_buff;
+  int			recv_sz;
+  int			recv_off;  
+}			state_t;
+
+// Worker structure
 typedef struct		worker
 {
   int			serv_sock;
   unsigned short	serv_port;
   std::list<int>	clients;
+  state_t		state;
   miner_t		miner;
 }			worker_t;
 
@@ -174,15 +197,18 @@ char		*unpack_sendblock(char *buf, int len);
 char		*unpack_sendtransaction(char *buf, int len);
 std::string	hash_binary_to_string(unsigned char hash[32]);
 void		string_integer_increment(char *buff, int len);
+void		string_integer_decrement(char *buff, int len);
 void		string_sub(unsigned char sender_amt[32], unsigned char amt2sub[32], unsigned char *output);
 void		string_add(unsigned char sender_amt[32], unsigned char amt2sub[32], unsigned char *output);
 bool		smaller_than(unsigned char first[32], unsigned char second[32]);
 void		wallet_print(const char *prefix, unsigned char sender[32],
 			     unsigned char amount[32], unsigned char receiver[32]);
+std::string	hash2str(unsigned char hash[32]);
 std::string	tag2str(unsigned char str[32]);
 bool		is_zero(unsigned char tag[32]);
 int		async_send(int fd, char *buff, int len, const char *errstr, bool verb);
 int		async_read(int fd, char *buff, int len, const char *errstr);
+void		worker_zero_state(worker_t& worker);
 
 // Transaction related functions
 int		trans_sync(blocklist_t added, blocklist_t removed, unsigned int numtxinblock);
@@ -198,6 +224,10 @@ bool		chain_propagate_only(blockmsg_t msg, char *transdata, unsigned int numtxin
 bool		chain_merge_deep(blockmsg_t msg, char *transdata, unsigned int numtxinblock, block_t& top, int port);
 bool		chain_merge_single_block(blockmsg_t msg, char *transdata, unsigned int numtxinblock, block_t& top, int port);
 bool		chain_accept_block(blockmsg_t msg, char *transdata, unsigned int numtxinblock, int port);
-bool		chain_sync(worker_t& worker, blockmsg_t newblock, unsigned int numtx, blocklistpair_t& out);
+bool		chain_sync(worker_t& worker, unsigned char expected_height[32]);
 bool		chain_store(blockmsg_t msg, char *transdata, unsigned int numtxinblock, int port);
 bool		chain_merge_simple(blockmsg_t msg, char *transdata, unsigned int numtxinblock, block_t& top, int port);
+
+// State machine handlers
+bool	chain_gethash(worker_t *worker, int sock, unsigned int numtxinblock, int difficulty);
+bool	chain_getblock(worker_t *worker, int sock, unsigned int numtxinblock, int difficulty);

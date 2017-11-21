@@ -9,176 +9,6 @@ extern mempool_t	transpool;
 extern mempool_t	past_transpool;
 extern pthread_mutex_t  transpool_lock;
 
-// Obtain a block hash from one of the peers
-bool		worker_get_hash(worker_t& worker, unsigned char next_height[32],
-				int numtxinblock, hashmsg_t& msg)
-{
-  fd_set	fds;
-  int		max = 0;
-  unsigned char found_hash[32];
-  int		ret = 0;
-
-  std::cerr << "ENTERED worker get hash (worker.clients nbr# "
-	    << worker.clients.size() << ")" << std::endl;
-  
-  // Send message to ask for hash of ancestor
-  FD_ZERO(&fds);
-  for (std::list<int>::iterator it = worker.clients.begin(); it != worker.clients.end(); it++)
-    {
-      hashmsg_t msg;
-      int sock = (*it);
-      FD_SET(sock, &fds);
-      if (sock > max)
-	max = sock;
-      msg.hdr.opcode = OPCODE_GETHASH;
-      memcpy(msg.height, next_height, 32);
-      async_send(sock, (char *) &msg, sizeof(msg), 0, true);
-    }
-  
-  // Check if anyone sent us the reply in the next 5 seconds
-  int nbr = 0;
-  struct timeval tv;
-  memset(&tv, 0x00, sizeof(tv));
-  tv.tv_sec = 5;
-  do {
-    ret = select(max + 1, &fds, NULL, NULL, &tv);
-    if (ret < 0)
-      {
-	std::cerr << "Chain syncing failed in select" << std::endl;
-	perror("worker_get_hash: select");
-	return (false);
-      }
-    else if (ret != 0)
-      {
-	for (std::list<int>::iterator it = worker.clients.begin();
-	     it != worker.clients.end(); it++)
-	  {
-	    int sock = (*it);
-	    if (FD_ISSET(sock, &fds))
-	      {
-		int len = async_read(sock, (char *) found_hash, 32, 0);
-		if (len != 32)
-		  FATAL("get_hash: Unable to async read in chain find ancestor block");
-		nbr++;
-	      }
-	  }
-      }
-  }
-  while (ret > 0);
-
-  // If we had no response from any worker, just drop
-  if (nbr == 0)
-    {
-      std::cerr << "get_hash: No response, just dropping block" << std::endl;
-      return (false);
-    }
-  
-  // We had an answer but the hash differed from what expected
-  block_t top = chain.top();
-  if (memcmp(found_hash, top.hdr.hash, 32) != 0)
-    {
-      std::cerr << "get_hash: Found block at desired height but hash differed - cont" << std::endl;
-      return (false);
-    }
-
-  // We received an answer with the same hash as the expected
-  std::cerr << "get_hash: Found block at desired height with SAME hash!" << std::endl;
-  return (true);
-}
-
-
-// Obtain a block data from one of the peers
-bool		worker_get_block(worker_t& worker, unsigned char next_height[32],
-				 int numtxinblock, block_t& block)
-{
-  fd_set	fds;
-  int		max = 0;
-  blockmsg_t	hdr;
-  char		*transdata = (char *) malloc(numtxinblock * 128);
-  int		ret;
-  
-  if (transdata == NULL)
-    {
-      std::cerr << "Failed to allocate transdata for block during chain syncing" << std::endl;
-      return (false);
-    }
-
-    std::cerr << "ENTERED worker get block" << std::endl;
-  
-  // Send message to ask for the block data at given height
-  FD_ZERO(&fds);
-  for (std::list<int>::iterator it = worker.clients.begin(); it != worker.clients.end(); it++)
-    {
-      hashmsg_t msg;
-      int sock = (*it);
-      FD_SET(sock, &fds);
-      if (sock > max)
-	max = sock;
-      msg.hdr.opcode = OPCODE_GETBLOCK;
-      memcpy(msg.height, next_height, 32);
-      async_send(sock, (char *) &msg, sizeof(msg), 0, false);
-    }
-  
-  // Check if anyone sent us the reply in the next 5 seconds
-  int nbr = 0;
-  struct timeval tv;
-  memset(&tv, 0x00, sizeof(tv));
-  tv.tv_sec = 5;
-  do {
-    ret = select(max + 1, &fds, NULL, NULL, &tv);
-    if (ret < 0)
-      {
-	std::cerr << "Block syncing failed in select 1" << std::endl;
-	perror("worker_get_block: select");
-	free(transdata);
-	return (false);
-      }
-    else if (ret != 0)
-      {
-	for (std::list<int>::iterator it = worker.clients.begin();
-	     it != worker.clients.end(); it++)
-	  {
-	    int sock = (*it);
-	    if (FD_ISSET(sock, &fds))
-	      {
-		int len = async_read(sock, (char *) &hdr, sizeof(hdr), 0);
-		if (len != sizeof(hdr))
-		  {
-		    std::cerr << "Block syncing failed in read 1" << std::endl;
-		    free(transdata);
-		    return (false);
-		  }
-		int toread = numtxinblock * 128;
-		len = async_read(sock, transdata, toread, 0);
-		if (len != toread)
-		  {
-		    std::cerr << "Block syncing failed in read 2" << std::endl;
-		    free(transdata);
-		    return (false);
-		  }
-		nbr++;
-	      }
-	  }
-      }
-  }
-  while (ret > 0);
-
-  // If we had no response from any worker, just drop
-  if (nbr == 0)
-    {
-      std::cerr << "get_block: No response " << std::endl;
-      free(transdata);
-      return (false);
-    }
-  
-  block.hdr = hdr;
-  block.trans = (transdata_t *) transdata;
-  
-  // We received an answer with the same hash as the expected!
-  std::cerr << "Found block data at desired height" << std::endl;
-  return (true);
-}
-
 
 // Store new block in chain
 bool		chain_store(blockmsg_t msg, char *transdata, unsigned int numtxinblock, int port)
@@ -202,8 +32,8 @@ bool		chain_store(blockmsg_t msg, char *transdata, unsigned int numtxinblock, in
 
       std::string msgstr = tag2str(msg.height);
       std::string topstr = tag2str(tophdr.height);
-      std::string msgprior = tag2str(msg.priorhash);
-      std::string topprior = tag2str(tophdr.priorhash);
+      std::string msgprior = hash2str(msg.priorhash);
+      std::string topprior = hash2str(tophdr.priorhash);
       
       std::cerr << "Entered chain store with "
 		<< " msgstr   = " << msgstr
@@ -216,11 +46,18 @@ bool		chain_store(blockmsg_t msg, char *transdata, unsigned int numtxinblock, in
 	  memcmp(msg.priorhash, tophdr.priorhash, 32) == 0)
 	chain_merge_simple(msg, transdata, numtxinblock, top, port);
       
-      else if ((memcmp(tophdr.height, msg.height, 32) == 0 &&
-		memcmp(msg.priorhash, tophdr.priorhash, 32) != 0) || 
-	       smaller_than(tophdr.height, msg.height))
-	chain_merge_deep(msg, transdata, numtxinblock, top, port);
-      
+      else if (memcmp(tophdr.height, msg.height, 32) == 0 &&
+	       memcmp(msg.priorhash, tophdr.priorhash, 32) != 0)
+	{
+	  std::cerr << "Entered MERGE_DEEP because priorhash not matching" << std::endl;	  
+	  chain_merge_deep(msg, transdata, numtxinblock, top, port);
+	}
+      else if (smaller_than(tophdr.height, msg.height))
+	{
+	  std::cerr << "Entered MERGE_DEEP because top block height is smaller" << std::endl;	  
+	  chain_merge_deep(msg, transdata, numtxinblock, top, port);
+	}
+    
       else if (smaller_than(msg.height, tophdr.height))
 	chain_propagate_only(msg, transdata, numtxinblock, port);
 
@@ -231,95 +68,172 @@ bool		chain_store(blockmsg_t msg, char *transdata, unsigned int numtxinblock, in
 
   //std::cerr << "Releasing chain lock" << std::endl;
   pthread_mutex_unlock(&chain_lock);
+
+  std::cerr << "Exiting chain store" << std::endl;
+  
   return (true);
 }
 
 
-// Find common ancestor on block chain using GET_HASH requests
-bool			chain_sync(worker_t& worker, blockmsg_t newblock,
-				   unsigned int numtxinblock, blocklistpair_t& out)
+// Obtain a block hash from one of the peers
+bool		worker_send_gethash(worker_t& worker, unsigned char next_height[32])
 {
-  unsigned char		next_height[32];
-  unsigned char		updated_height[32];
-  unsigned char		*one = (unsigned char *) "00000000000000000000000000000001";
-  std::list<block_t>	dropped;
-  std::list<block_t>	added;
-  hashmsg_t		ancestor_hash;
-  block_t		ancestor_block;
+  std::cerr << "ENTERED worker_send_gethash (worker.clients nbr# "
+	    << worker.clients.size() << ") requesting height "
+	    << tag2str(next_height) << std::endl;
   
-  std::cerr << "ENTERED chain sync" << std::endl;
-
-  // We start to search from the minimal height from chain and new block
-  if (chain.size() == 0)
-    memcpy(next_height, "00000000000000000000000000000000", 32);
-  else
+  // Send message to ask for hash of ancestor block
+  for (std::list<int>::iterator it = worker.clients.begin(); it != worker.clients.end(); it++)
     {
-      block_t	top = chain.top();
-      memcpy(next_height, top.hdr.height, 32);
-  
-      // Keep searching by decreasing height while we have not found an ancestor
-      bool	found = false;
-      while (false == found && false == is_zero(next_height))
-	{
-	  found = worker_get_hash(worker, next_height, numtxinblock, ancestor_hash);
-	  if (false == found)
-	    {
-	      string_sub(next_height, one, updated_height);
-	      memcpy(next_height, updated_height, 32);
-	    }
-
-	  block_t top = chain.top();
-	  dropped.push_front(top);
-	  chain.pop();
-	  std::string height = tag2str(top.hdr.height);
-	  bmap.erase(height);
-	}
+      hashmsg_t msg;
+      int sock = (*it);
+      msg.hdr.opcode = OPCODE_GETHASH;
+      memcpy(msg.height, next_height, 32);
       
-      // If no ancestor could be found, restore original chain and return error
-      if (found == false)
-	{
-	  std::cerr << "Could not find hash of any ancestor block - dropping new block"
-		    << std::endl;
-	  for (blocklist_t::iterator it = dropped.begin(); it != dropped.end(); it++)
-	    {
-	      block_t& cur = *it;
-	      chain.push(cur);
-	      std::string height = tag2str(cur.hdr.height);
-	      bmap[height] = cur;
-	    }
-	  return (false);
-	}
+      int ret = async_send(sock, (char *) &msg, sizeof(msg), 0, true);
+
+      std::cerr << "Sent hashmsg on socket " << sock << " ret = " << ret << std::endl;
+      
+      worker.state.chain_state = CHAIN_WAITING_FOR_HASH;
+      return (true);
     }
 
-  // We have an ancestor, now get block data until the top is reached
-  bool finished = false;
-  while (false == finished)
+  // Failed to find anyone to send that message to
+  return (false);
+}
+
+// Obtain a block data from one of the peers
+bool		worker_send_getblock(worker_t& worker, int sock)
+{
+  std::cerr << "ENTERED worker_send_getblock" << std::endl;
+  
+  // Send message to ask for the block data at given height
+  for (std::list<int>::iterator it = worker.clients.begin(); it != worker.clients.end(); it++)
     {
-      bool res = worker_get_block(worker, next_height, numtxinblock, ancestor_block);
-      if (res == false)
-	{
-	  std::cerr << "Unable to obtain block data from known hash - dropping new block"
-		    << std::endl;
-	  for (blocklist_t::iterator it = dropped.begin(); it != dropped.end(); it++)
-	    {
-	      block_t& cur = *it;
-	      chain.push(cur);
-	      std::string height = tag2str(cur.hdr.height);
-	      bmap[height] = cur;
-	    }
-	  return (false);
-	}
-      added.push_back(ancestor_block);
-      if (memcmp(next_height, newblock.height, 32))
-	finished = true;
-      else
-	{
-	  string_add(next_height, one, updated_height);
-	  memcpy(next_height, updated_height, 32);
-	}
+      hashmsg_t msg;
+      int sock = (*it);
+      msg.hdr.opcode = OPCODE_GETBLOCK;
+      memcpy(msg.height, worker.state.working_height, 32);
+      async_send(sock, (char *) &msg, sizeof(msg), 0, false);
+      worker.state.chain_state = CHAIN_WAITING_FOR_BLOCK;
+      return (true);
     }
 
+  std::cerr << "worker_send_getblock has no peer to request hash: returning false" << std::endl;
+  return (false);
+}
+
+
+// We have a client update where we were waiting for 
+bool		chain_gethash(worker_t *worker, int sock,
+			      unsigned int numtxinblock, int difficulty)
+{        
+  char		found_hash[32];
+
+  // Read hash data
+  int len = async_read(sock, (char *) &found_hash, 32, 0);
+  if (len != 32)
+    {
+      std::cerr << "Hash syncing failed in read" << std::endl;
+      return (false);
+    }
+
+  // We had an answer but the hash differed from what expected
+  block_t top = chain.top();
+  if (memcmp(found_hash, top.hdr.hash, 32) != 0)
+    {
+      if (chain.size() == 0)
+	{
+	  std::cerr << "WARN: get_hash: Hash differed and reached empty chain" << std::endl;
+	  // XXX: should restore all dropped block here
+	  return (false);
+	}
+      worker->state.dropped.push_front(top);
+      chain.pop();
+      bmap.erase(tag2str(top.hdr.height));
+      string_integer_decrement((char *) worker->state.working_height, 32);
+      std::cerr << "WARN: get_hash: Hash differed, now asking deeper hash" << std::endl;
+      return (worker_send_gethash(*worker, worker->state.working_height));
+    }
+
+  // We received an answer with the same hash as the expected
+  std::cerr << "chain_gethash: Found ancestor block with MATCHING hash (height "
+	    << worker->state.working_height << ") NOW SEND GETBLOCK" << std::endl;
+
+  // Now start getting block data starting with the bottom hash
+  worker_send_getblock(*worker, sock);
+  return (true);
+}
+
+
+// We have a client update where we were waiting for a block
+bool		chain_getblock(worker_t *worker, int sock,
+			       unsigned int numtxinblock, int difficulty)
+{
+  blockmsg_t	hdr;
+  block_t	block;
+  
+  int len = async_read(sock, (char *) &hdr, sizeof(hdr), 0);
+  if (len != sizeof(hdr))
+    {
+      std::cerr << "Block syncing failed in read 1" << std::endl;
+      // XXX: should restore all dropped block here
+      return (false);
+    }
+  int total = numtxinblock * 128;
+  if (worker->state.recv_buff == NULL)
+    {
+      worker->state.recv_buff = (char *) malloc(total);
+      if (worker->state.recv_buff == NULL)
+	{
+	  std::cerr << "chain_getblock malloc failure" << std::endl;
+	  // XXX: should restore all dropped block here
+	  return (false);
+	}
+      worker->state.recv_sz = total;
+      worker->state.recv_off = 0;
+    }
+  int toread = worker->state.recv_sz - worker->state.recv_off;
+  len = async_read(sock, worker->state.recv_buff + worker->state.recv_off, toread, 0);
+  if (len < 0)
+    {
+      std::cerr << "chain_getblock: async_read failed " << len << " vs " << toread << std::endl;
+      // XXX: should restore all dropped block here
+      return (false);
+    }
+  if (len != toread)
+    {
+      std::cerr << "chain_getblock: async_read incomplete " << len << " vs " << toread << std::endl;
+      return (true);
+    }
+
+  block.hdr = hdr;
+  block.trans = (transdata_t *) worker->state.recv_buff;
+  worker->state.added.push_back(block);
+
+  // If we are done, sync transactions
+  if (memcmp(hdr.height, worker->state.expected_height, sizeof(hdr.height)) == 0)
+    {
+      trans_sync(worker->state.added, worker->state.dropped, numtxinblock);
+      worker->state.chain_state = CHAIN_READY_FOR_NEW;
+      return (true);
+    }
+
+  // Not done yet - ask for block at next height
+  string_integer_increment((char *) worker->state.working_height, 32);
+  return (worker_send_getblock(*worker, sock));
+ 
+  /***** This is failure mode code  that was temporarily removed *****
   // We found all the blocks until the top. Push added blocks to the chain
+  std::cerr << "Unable to obtain block data from known hash - dropping new block"
+  << std::endl;
+  for (blocklist_t::iterator it = dropped.begin(); it != dropped.end(); it++)
+  {
+  block_t& cur = *it;
+  chain.push(cur);
+  std::string height = tag2str(cur.hdr.height);
+  bmap[height] = cur;
+  }
   for (blocklist_t::iterator it = added.begin(); it != added.end(); it++)
     {
       block_t& cur = *it;
@@ -327,11 +241,30 @@ bool			chain_sync(worker_t& worker, blockmsg_t newblock,
       std::string height = tag2str(cur.hdr.height);
       bmap[height] = cur;
     }
+  *************************/
+}
+
+
+// Find common ancestor on block chain using GET_HASH requests
+bool			chain_sync(worker_t& worker, unsigned char expected_height[32])
+{
+  std::cerr << "ENTERED chain_sync expected height = " << tag2str(expected_height) << std::endl;
+
+  memcpy(worker.state.expected_height, expected_height, 32);
+    
+  // We start to search from the minimal height from chain and new block
+  if (chain.size() == 0)
+    memset(worker.state.working_height, '0', 32); 
+  else
+    {
+      block_t	top = chain.top();
+      memcpy(worker.state.working_height, top.hdr.height, 32);
+      string_integer_decrement((char *) worker.state.working_height, 32);
+    }
+
+  std::cerr << "chain_sync: sending new GETHASH command" << std::endl;
   
-  std::cerr << "Succesfully synced chain" << std::endl;
-  blocklistpair_t lout = std::make_pair(added, dropped);
-  out = lout;
-  return (true);
+  return (worker_send_gethash(worker, worker.state.working_height));
 }
 
 
@@ -351,7 +284,6 @@ bool		chain_accept_block(blockmsg_t msg, char *transdata,
   // Kill any existing miner and push new block on chain
   if (miner.tid)
     {
-
       std::cout << "Killing miner tid = " << miner.tid << std::endl;
       
       pthread_kill(miner.tid, SIGTERM);
@@ -372,31 +304,26 @@ bool		chain_accept_block(blockmsg_t msg, char *transdata,
     }
 
   // The block is height 0 and we have nothing on the chain: just push the block
-  if (is_zero(msg.height))
+  if (chain.size() == 0 && is_zero(msg.height))
     {
       newtop.hdr = msg;
       newtop.trans = (transdata_t *) transdata;
       chain.push(newtop);
       std::string height = tag2str(newtop.hdr.height);
       bmap[height] = newtop;
-      
       synced.push_back(newtop);
       bp = std::make_pair(synced, removed);
+      trans_sync(bp.first, bp.second, numtxinblock);
+      return (true);
     }
 
   // The block is not height 0 and we have nothing on the chain: get all ancestor blocks
-  else
+  res = chain_sync(workermap[port], msg.height);
+  if (res == false)
     {
-      res = chain_sync(workermap[port], newtop.hdr, numtxinblock, bp);
-      if (res == false)
-	{
-	  std::cerr << "Unable to find ancestor block : dropping" << std::endl;
-	  return (false);
-	}
+      std::cerr << "Unable to request ancestor block : return false" << std::endl;
+      return (false);
     }
-  
-  // Sync the transaction pool and account to reflect the new state of the chain
-  trans_sync(bp.first, bp.second, numtxinblock);
   return (true);
 }
 
@@ -454,8 +381,6 @@ bool		chain_merge_simple(blockmsg_t msg, char *transdata,
       std::cerr << "Accepted block on the chain - no miner was currently running" << std::endl;
     }
 
-
-
   // Sync the transaction pool and account to reflect the new state of the chain
   blocklist_t removed;
   blocklist_t added;
@@ -473,14 +398,12 @@ bool			chain_merge_deep(blockmsg_t msg, char *transdata,
 {
   worker_t&		worker = workermap[port];
   miner_t&		miner = worker.miner;
-  blocklistpair_t	bp;
 
   std::cerr << "ENTERED chain merge deep" << std::endl;
   
   if (miner.tid)
     {
-
-      std::cout << "Killing miner tid = " << miner.tid << std::endl;
+      std::cerr << "Killing miner tid = " << miner.tid << std::endl;
       
       pthread_kill(miner.tid, SIGTERM);
       miner.tid = 0;
@@ -492,15 +415,15 @@ bool			chain_merge_deep(blockmsg_t msg, char *transdata,
     }
 
   // There is no common ancestor - sync up with chain of sent block entirely
-  bool found = chain_sync(worker, msg, numtxinblock, bp);
-  if (found == false)
+  bool ret = chain_sync(worker, msg.height);
+  if (ret == false)
     {
-      std::cerr << "Unable to find ancestor block : dropping" << std::endl;
+      std::cerr << "Unable to initiate chain sync : dropping" << std::endl;
       return (false);
     }	  
-
+  
   // Synchronize transactions and accounts
-  trans_sync(bp.first, bp.second, numtxinblock);
+  //trans_sync(bp.first, bp.second, numtxinblock);
   return (true);
 }
 
@@ -544,6 +467,8 @@ bool	chain_propagate_only(blockmsg_t msg, char *transdata,
 	  //std::cerr << "Propagated trans to remote port " << remote.remote_port << std::endl;
 	}
     }
+
+  std::cerr << "Propagation completed, returning." << std::endl;
   
   return (true);
 }
