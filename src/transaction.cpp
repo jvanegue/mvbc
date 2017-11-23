@@ -5,6 +5,9 @@ extern UTXO		utxomap;
 extern mempool_t	transpool;
 extern mempool_t	past_transpool;
 extern pthread_mutex_t  transpool_lock;
+extern blockchain_t	chain;
+extern blockmap_t	bmap;
+extern pthread_mutex_t  chain_lock;
 
 // Check if a transaction is already present in the mempool
 bool		trans_exists(worker_t *worker, transmsg_t trans)
@@ -112,7 +115,7 @@ int		trans_verify(worker_t *worker,
 // Remove all duplicate transactions from the current pool after a chain syncing
 // Input: The list of blocks that were pushed on the chain and  the list that was removed
 // Return: The number of duplicate transactions removed from the pool
-int		trans_sync(blocklist_t& added, blocklist_t& removed, unsigned int numtxinblock)
+int		trans_sync(blocklist_t& added, blocklist_t& removed, unsigned int numtxinblock, bool store)
 {
   unsigned int	nbr;
 
@@ -184,6 +187,15 @@ int		trans_sync(blocklist_t& added, blocklist_t& removed, unsigned int numtxinbl
 	      past_transpool[transkey] = msg;
 	    }
 	  pthread_mutex_unlock(&transpool_lock);
+
+	  // Add block to map and chain
+	  if (store)
+	    {
+	      chain.push(curblock);
+	      std::string height = tag2str(curblock.hdr.height);
+	      bmap[height] = curblock;
+	    }
+	  
 	}
     }
   

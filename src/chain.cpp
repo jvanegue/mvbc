@@ -37,13 +37,13 @@ bool		chain_store(blockmsg_t msg, char *transdata, unsigned int numtxinblock, in
       std::string topprior = hash2str(tophdr.priorhash);
       std::string tophash  = hash2str(tophdr.hash);
       
-      std::cerr << "Entered chain store with "
-		<< " msgheight   = " << msgstr 
-		<< " topheight   = " << topstr
-		<< " msghash     = " << msghash 
-		<< " msgprior    = " << msgprior
-		<< " tophash     = " << tophash
-		<< " topprior    = " << topprior
+      std::cerr << "Entered chain store with " << std::endl
+		<< " msgheight   = " << msgstr << std::endl
+		<< " topheight   = " << topstr << std::endl
+		<< " msghash     = " << msghash  << std::endl
+		<< " msgprior    = " << msgprior << std::endl
+		<< " tophash     = " << tophash << std::endl
+		<< " topprior    = " << topprior << std::endl
 		<< std::endl;
       
       if (memcmp(msg.height, tophdr.height, 32) == 0 &&
@@ -94,7 +94,7 @@ bool		worker_send_gethash(worker_t& worker, unsigned char next_height[32])
       msg.hdr.opcode = OPCODE_GETHASH;
       memcpy(msg.height, next_height, 32);
       
-      int ret = async_send(sock, (char *) &msg, sizeof(msg), 0, true);
+      int ret = async_send(sock, (char *) &msg, sizeof(msg), 0, false);
 
       std::cerr << "Sent hashmsg on socket " << sock << " ret = " << ret << std::endl;
       
@@ -118,7 +118,7 @@ bool		worker_send_getblock(worker_t& worker, int sock)
       int sock = (*it);
       msg.hdr.opcode = OPCODE_GETBLOCK;
       memcpy(msg.height, worker.state.working_height, 32);
-      async_send(sock, (char *) &msg, sizeof(msg), 0, false);
+      async_send(sock, (char *) &msg, sizeof(msg), 0, true);
       worker.state.chain_state = CHAIN_WAITING_FOR_BLOCK;
       return (true);
     }
@@ -150,23 +150,24 @@ bool			chain_gethash(worker_t *worker, int sock,
 		<< " vs top: " << hash2str(top.hdr.hash) << std::endl;
       
       chain.pop();
-      if (chain.size() == 0)
-	{
-	  
-	  std::cerr << "WARN: get_hash: Hash differed and reached empty chain" << std::endl;
-	  // XXX: should restore all dropped block here
-	  return (false);
-	}
-      else
-	std::cerr << "FOUND CHAIN SIZE = " << chain.size() << std::endl;
-      
       if (worker->state.dropped == NULL)
 	worker->state.dropped = new std::list<block_t>();
       worker->state.dropped->push_front(top);
       bmap.erase(tag2str(top.hdr.height));
-      string_integer_decrement((char *) worker->state.working_height, 32);
-      std::cerr << "WARN: get_hash: Hash differed, now asking deeper hash" << std::endl;
-      return (worker_send_gethash(*worker, worker->state.working_height));
+      
+      if (chain.size() == 0)
+	{
+	  std::cerr << "WARN: get_hash: Hash differed and reached empty chain" << std::endl;
+	  return (worker_send_getblock(*worker, sock));
+	}
+      else
+	{
+	  std::cerr << "FOUND CHAIN SIZE = " << chain.size() << std::endl;
+	  string_integer_decrement((char *) worker->state.working_height, 32);
+	  std::cerr << "WARN: get_hash: Hash differed, now asking deeper hash" << std::endl;
+	  return (worker_send_gethash(*worker, worker->state.working_height));
+	}
+      
     }
 
   // We received an answer with the same hash as the expected
@@ -174,8 +175,7 @@ bool			chain_gethash(worker_t *worker, int sock,
 	    << worker->state.working_height << ") NOW SEND GETBLOCK" << std::endl;
 
   // Now start getting block data starting with the bottom hash
-  worker_send_getblock(*worker, sock);
-  return (true);
+  return (worker_send_getblock(*worker, sock));
 }
 
 
@@ -230,7 +230,7 @@ bool		chain_getblock(worker_t *worker, int sock,
   // If we are done, sync transactions
   if (memcmp(hdr.height, worker->state.expected_height, sizeof(hdr.height)) == 0)
     {
-      trans_sync(*worker->state.added, *worker->state.dropped, numtxinblock);
+      trans_sync(*worker->state.added, *worker->state.dropped, numtxinblock, true);
       worker_zero_state(*worker);
       return (true);
     }
@@ -327,7 +327,7 @@ bool		chain_accept_block(blockmsg_t msg, char *transdata,
       bmap[height] = newtop;
       synced.push_back(newtop);
       bp = std::make_pair(synced, removed);
-      trans_sync(bp.first, bp.second, numtxinblock);
+      trans_sync(bp.first, bp.second, numtxinblock, false);
       return (true);
     }
 
@@ -400,7 +400,7 @@ bool		chain_merge_simple(blockmsg_t msg, char *transdata,
   blocklist_t added;
   added.push_back(newtop);
   removed.push_back(top);
-  trans_sync(added, removed, numtxinblock);
+  trans_sync(added, removed, numtxinblock, false);
   return (true);
 }
 
@@ -435,9 +435,7 @@ bool			chain_merge_deep(blockmsg_t msg, char *transdata,
       std::cerr << "Unable to initiate chain sync : dropping" << std::endl;
       return (false);
     }	  
-  
-  // Synchronize transactions and accounts
-  //trans_sync(bp.first, bp.second, numtxinblock);
+
   return (true);
 }
 

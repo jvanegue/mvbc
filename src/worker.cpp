@@ -334,6 +334,13 @@ static int	miner_update(worker_t *worker, blockmsg_t newblock, char *data, int n
   
   // Execute all transactions of the block
   trans_exec((transdata_t *) data, numtxinblock, false);
+
+  // Some debug
+  std::string hash  = hash2str(newblock.hash);
+  std::string phash = hash2str(newblock.priorhash);
+  std::cerr << "Miner pushing new block: " << std::endl
+	    << " new top hash       = " << hash << std::endl
+	    << " new top prior hash = " << phash << std::endl;
   
   // Create block and push it on chain
   block_t    chain_elem;
@@ -580,7 +587,8 @@ static int	client_update(worker_t *worker, int client_sock,
 			      unsigned int numtxinblock, int difficulty)
 {
   int		ret = -1;
-
+  bool		res;
+  
   /* This update came from a remote, there is no worker associated to it */
   if (worker == NULL)
     {
@@ -596,11 +604,13 @@ static int	client_update(worker_t *worker, int client_sock,
       break;
     case CHAIN_WAITING_FOR_HASH:
       std::cout << "client_update: UPDATE GETHASH state" << std::endl;
-      ret = chain_gethash(worker, client_sock, numtxinblock, difficulty);
+      res = chain_gethash(worker, client_sock, numtxinblock, difficulty);
+      if (res) ret = 0;
       break;
     case CHAIN_WAITING_FOR_BLOCK:
       std::cout << "client_update: UPDATE GETBLOCK state" << std::endl;
-      ret = chain_getblock(worker, client_sock, numtxinblock, difficulty);
+      res = chain_getblock(worker, client_sock, numtxinblock, difficulty);
+      if (res) ret = 0;
       break;
     default:
       std::cerr << "Chain: unknown state" << std::endl;
