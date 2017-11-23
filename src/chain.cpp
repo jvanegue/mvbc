@@ -33,13 +33,17 @@ bool		chain_store(blockmsg_t msg, char *transdata, unsigned int numtxinblock, in
       std::string msgstr = tag2str(msg.height);
       std::string topstr = tag2str(tophdr.height);
       std::string msgprior = hash2str(msg.priorhash);
+      std::string msghash  = hash2str(msg.hash);
       std::string topprior = hash2str(tophdr.priorhash);
+      std::string tophash  = hash2str(tophdr.hash);
       
       std::cerr << "Entered chain store with "
-		<< " msgstr   = " << msgstr
-		<< " topstr   = " << topstr
-		<< " msgprior = " << msgprior
-		<< " topprior = " << topprior
+		<< " msgheight   = " << msgstr 
+		<< " topheight   = " << topstr
+		<< " msghash     = " << msghash 
+		<< " msgprior    = " << msgprior
+		<< " tophash     = " << tophash
+		<< " topprior    = " << topprior
 		<< std::endl;
       
       if (memcmp(msg.height, tophdr.height, 32) == 0 &&
@@ -153,6 +157,9 @@ bool			chain_gethash(worker_t *worker, int sock,
 	  // XXX: should restore all dropped block here
 	  return (false);
 	}
+      else
+	std::cerr << "FOUND CHAIN SIZE = " << chain.size() << std::endl;
+      
       if (worker->state.dropped == NULL)
 	worker->state.dropped = new std::list<block_t>();
       worker->state.dropped->push_front(top);
@@ -262,6 +269,11 @@ bool			chain_sync(worker_t& worker, unsigned char expected_height[32])
       block_t	top = chain.top();
       memcpy(worker.state.working_height, top.hdr.height, 32);
       string_integer_decrement((char *) worker.state.working_height, 32);
+      if (worker.state.dropped == NULL)
+	worker.state.dropped = new std::list<block_t>();
+      worker.state.dropped->push_front(top);
+      bmap.erase(tag2str(top.hdr.height));
+      chain.pop();
     }
 
   std::cerr << "chain_sync: sending new GETHASH command" << std::endl;
