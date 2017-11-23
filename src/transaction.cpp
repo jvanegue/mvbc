@@ -112,7 +112,7 @@ int		trans_verify(worker_t *worker,
 // Remove all duplicate transactions from the current pool after a chain syncing
 // Input: The list of blocks that were pushed on the chain and  the list that was removed
 // Return: The number of duplicate transactions removed from the pool
-int		trans_sync(blocklist_t added, blocklist_t removed, unsigned int numtxinblock)
+int		trans_sync(blocklist_t& added, blocklist_t& removed, unsigned int numtxinblock)
 {
   unsigned int	nbr;
 

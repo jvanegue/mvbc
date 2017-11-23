@@ -125,10 +125,10 @@ bool		worker_send_getblock(worker_t& worker, int sock)
 
 
 // We have a client update where we were waiting for 
-bool		chain_gethash(worker_t *worker, int sock,
-			      unsigned int numtxinblock, int difficulty)
+bool			chain_gethash(worker_t *worker, int sock,
+				      unsigned int numtxinblock, int difficulty)
 {        
-  char		found_hash[32];
+  unsigned char		found_hash[32];
 
   // Read hash data
   int len = async_read(sock, (char *) &found_hash, 32, 0);
@@ -142,14 +142,20 @@ bool		chain_gethash(worker_t *worker, int sock,
   block_t top = chain.top();
   if (memcmp(found_hash, top.hdr.hash, 32) != 0)
     {
+      std::cerr << "WARN: get_hash: Hash differed: received " << hash2str(found_hash)
+		<< " vs top: " << hash2str(top.hdr.hash) << std::endl;
+      
+      chain.pop();
       if (chain.size() == 0)
 	{
+	  
 	  std::cerr << "WARN: get_hash: Hash differed and reached empty chain" << std::endl;
 	  // XXX: should restore all dropped block here
 	  return (false);
 	}
-      worker->state.dropped.push_front(top);
-      chain.pop();
+      if (worker->state.dropped == NULL)
+	worker->state.dropped = new std::list<block_t>();
+      worker->state.dropped->push_front(top);
       bmap.erase(tag2str(top.hdr.height));
       string_integer_decrement((char *) worker->state.working_height, 32);
       std::cerr << "WARN: get_hash: Hash differed, now asking deeper hash" << std::endl;
@@ -203,19 +209,22 @@ bool		chain_getblock(worker_t *worker, int sock,
     }
   if (len != toread)
     {
-      std::cerr << "chain_getblock: async_read incomplete " << len << " vs " << toread << std::endl;
+      std::cerr << "chain_getblock: async_read incomplete TBC " << len << " of " << toread << std::endl;
       return (true);
     }
 
   block.hdr = hdr;
   block.trans = (transdata_t *) worker->state.recv_buff;
-  worker->state.added.push_back(block);
+
+  if (worker->state.added == NULL)
+    worker->state.added = new std::list<block_t>();
+  worker->state.added->push_back(block);
 
   // If we are done, sync transactions
   if (memcmp(hdr.height, worker->state.expected_height, sizeof(hdr.height)) == 0)
     {
-      trans_sync(worker->state.added, worker->state.dropped, numtxinblock);
-      worker->state.chain_state = CHAIN_READY_FOR_NEW;
+      trans_sync(*worker->state.added, *worker->state.dropped, numtxinblock);
+      worker_zero_state(*worker);
       return (true);
     }
 
@@ -234,13 +243,6 @@ bool		chain_getblock(worker_t *worker, int sock,
   std::string height = tag2str(cur.hdr.height);
   bmap[height] = cur;
   }
-  for (blocklist_t::iterator it = added.begin(); it != added.end(); it++)
-    {
-      block_t& cur = *it;
-      chain.push(cur);
-      std::string height = tag2str(cur.hdr.height);
-      bmap[height] = cur;
-    }
   *************************/
 }
 

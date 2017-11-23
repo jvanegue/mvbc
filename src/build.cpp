@@ -76,8 +76,14 @@ void		worker_zero_state(worker_t& worker)
   memset((void *) worker.state.expected_height, 0x00, 32);
   memset((void *) worker.state.working_height, 0x00, 32);
   worker.state.chain_state = CHAIN_READY_FOR_NEW;
-  worker.state.added.clear();
-  worker.state.dropped.clear();
+  if (worker.state.added == NULL)
+    worker.state.added = new std::list<block_t>();
+  else
+    worker.state.added->clear();
+  if (worker.state.dropped == NULL)
+    worker.state.dropped = new std::list<block_t>();
+  else
+    worker.state.dropped->clear();
   worker.state.recv_buff = NULL;
   worker.state.recv_sz = 0;
   worker.state.recv_off = 0;  

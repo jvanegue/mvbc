@@ -34,7 +34,6 @@ pthread_mutex_t sockmap_lock = PTHREAD_MUTEX_INITIALIZER;
 sockmap_t	rsockmap;
 sockmap_t	wsockmap;
 
-
 // Helper function to reset socket readset for selects
 static int reset_fdsets(int boot_sock)
 {
@@ -275,9 +274,9 @@ static int		worker_update(int port)
       std::cerr << "Failure to accept on socket: " << worker.serv_sock << std::endl;
       FATAL("Failed accept on worker server socket");
     }
-  
+
   worker.clients.push_back(csock);
-  worker_zero_state(worker);
+  //worker_zero_state(worker);
 
   std::cerr << "worker update: accepted conx. Adding socket " << csock << " port " << port
 	    << " to worker.clients list, now has " << worker.clients.size() << " elms" << std::endl;
@@ -479,7 +478,10 @@ static int	client_update_new(worker_t *worker, int client_sock,
   
   int len = async_read(client_sock, (char *) &opcode, 1, "READ opcode in client update failed");
   if (len == 0)
-    return (-1);
+    {
+      std::cerr << "** async_read opcode returned 0: will return -1 and close socket " << client_sock << std::endl;
+      return (-1);
+    }
   else if (len != 1)
     FATAL("FAILED client update read");
 
@@ -530,6 +532,8 @@ static int	client_update_new(worker_t *worker, int client_sock,
       async_send(client_sock, (char *) &blk.hdr, sizeof(blk.hdr), "GETBLOCK send 1", false);
       async_send(client_sock, (char *) blk.trans, sizeof(transdata_t) * numtxinblock,
 		 "GETBLOCK send 2", false);
+      std::cerr << "GETBLOCK SENT ANSWER" << std::endl;
+      return (0);
       break;
 
       // Get hash opcode
@@ -537,15 +541,21 @@ static int	client_update_new(worker_t *worker, int client_sock,
       std::cerr << "GETHASH OPCODE " << std::endl;
       len = async_read(client_sock, blockheight, sizeof(blockheight), "GETHASH read failed");
       if (len != sizeof(blockheight))
-	FATAL("Not enough bytes in GETBLOCK message");
+	FATAL("Not enough bytes in GETHASH message");
       height = tag2str((unsigned char *) blockheight);
+      std::cerr << "GETHASH requested height " << height << std::endl;
       if (bmap.find(height) == bmap.end())
 	{
 	  std::cerr << "GETHASH: Did not find block at desired height" << std::endl;
 	  return (0);
 	}
       blk = bmap[height];
+
+      std::cerr << "GETHASH SENDING: " << hash2str(blk.hdr.hash) << std::endl;
+      
       async_send(client_sock, (char *) blk.hdr.hash, 32, "GETHASH send", false);
+      std::cerr << "GETHASH SENT ANSWER" << std::endl;
+      return (0);
       break;
 
       // Send ports opcode (only sent via boot node generally)
@@ -571,6 +581,13 @@ static int	client_update(worker_t *worker, int client_sock,
 {
   int		ret = -1;
 
+  /* This update came from a remote, there is no worker associated to it */
+  if (worker == NULL)
+    {
+      ret = client_update_new(NULL, client_sock, numtxinblock, difficulty);
+      return (ret);
+    }
+  
   switch (worker->state.chain_state)
     {
     case CHAIN_READY_FOR_NEW:
@@ -617,6 +634,59 @@ void		UTXO_init()
 
   std::cerr << "Finished initializing UTXO" << std::endl;
 }
+
+
+
+
+static void		worker_socket_update(worker_t* worker, int client_sock, int numtxinblock, int difficulty)
+{
+  
+  // Treat traffic outbound when sockets can be sent more data and we have data waiting
+  if (FD_ISSET(client_sock, &writeset) && wsockmap.find(client_sock) != wsockmap.end())
+    {
+      //std::cerr << "Unblocked on writable client sock " << client_sock << std::endl; 
+      std::string tosend = wsockmap[client_sock];
+      int sent = send(client_sock, tosend.c_str(), tosend.size(), 0);
+      if (sent < 0)
+	sent = 0;
+      else if (sent != (int) tosend.size())
+	wsockmap[client_sock] = tosend.substr(sent, tosend.size());
+      else
+	wsockmap.erase(client_sock);
+    }
+  
+  // debug only
+  else if (FD_ISSET(client_sock, &writeset))
+    std::cout << "client_sock " << client_sock
+	      << " is SET but wsockmap indicates no data to send" << std::endl;
+  
+  // Treat sockets for read
+  // Dont create job if rsockmap is already market for that client
+  if (FD_ISSET(client_sock, &readset) && rsockmap.find(client_sock) == rsockmap.end())
+    {
+      //std::cerr << "Unblocked on readable client sock " << client_sock << std::endl;
+      job_t	job;
+      ctx_t	ctx;
+      ctx.worker = worker;
+      ctx.sock = client_sock;
+      ctx.numtxinblock = numtxinblock;
+      ctx.difficulty = difficulty;
+      job.context = ctx;
+      pthread_mutex_lock(&job_lock);
+      jobq.push(job);
+      pthread_mutex_unlock(&job_lock);
+      //pthread_cond_broadcast(&job_cond);
+      rsockmap[client_sock] = "ready";
+      //std::cerr << "Queued job" << std::endl;
+    }
+  
+  // debug only
+  else if (FD_ISSET(client_sock, &readset))
+    std::cerr << "client_sock " << client_sock
+	      << " is SET but rsockmap already marked for it" << std::endl;
+}
+
+
 
 
 // Main procedure for node in worker mode
@@ -697,7 +767,9 @@ void	  execute_worker(unsigned int numtxinblock, unsigned int difficulty,
       newworker.serv_sock = serv_sock;
       newworker.serv_port = port;
       newworker.miner.tid = 0;
-      //newworker.miner.sock = 0;
+      newworker.state.added = NULL;
+      newworker.state.dropped = NULL;
+      worker_zero_state(newworker);      
       workermap[port] = newworker;
 
       // Advertize new worker to bootstrap node
@@ -759,7 +831,8 @@ void	  execute_worker(unsigned int numtxinblock, unsigned int difficulty,
       // Check if any worker has been connected to by new clients
       for (workermap_t::iterator it = workermap.begin(); it != workermap.end(); it++)
 	{
-	  int serv_sock = it->second.serv_sock;
+	  worker_t& worker = it->second;
+	  int serv_sock = worker.serv_sock;
 	  if (FD_ISSET(serv_sock, &readset))
 	    {
 
@@ -772,73 +845,39 @@ void	  execute_worker(unsigned int numtxinblock, unsigned int difficulty,
 	    }
 
 	  // Treat traffic from existing worker's clients
-	  for (std::list<int>::iterator it2 = it->second.clients.begin();
-	       it2 != it->second.clients.end(); it2++)
+	  for (std::list<int>::iterator it2 = worker.clients.begin();
+	       it2 != worker.clients.end(); it2++)
 	    {
 	      int client_sock = *it2;
 	      //std::cerr << "Acquiring sockm lock..." << std::endl;
 	      pthread_mutex_lock(&sockmap_lock);
 	      //std::cerr << "Acquired sockm lock..." << std::endl;
-
-	      // Treat traffic outbound when sockets can be sent more data and we have data waiting
-	      if (FD_ISSET(client_sock, &writeset) && wsockmap.find(client_sock) != wsockmap.end())
-		{
-
-		  //std::cerr << "Unblocked on writable client sock " << client_sock << std::endl;
-		  
-		  std::string tosend = wsockmap[client_sock];
-		  int sent = send(client_sock, tosend.c_str(), tosend.size(), 0);
-		  if (sent < 0)
-		    sent = 0;
-		  else if (sent != (int) tosend.size())
-		    wsockmap[client_sock] = tosend.substr(sent, tosend.size());
-		  else
-		    wsockmap.erase(client_sock);
-		}
-
-	      // debug only
-	      else if (FD_ISSET(client_sock, &writeset))
-		std::cout << "client_sock " << client_sock
-			  << " is SET but wsockmap indicates no data to send" << std::endl;
-	      
-	      // Treat sockets for read
-	      // Dont create job if rsockmap is already market for that client
-	      if (FD_ISSET(client_sock, &readset) && rsockmap.find(client_sock) == rsockmap.end())
-		{
-
-		  std::cerr << "Unblocked on readable client sock " << client_sock << std::endl;
-		  
-		  job_t	job;
-		  ctx_t	ctx;
-		  ctx.worker = &it->second;
-		  ctx.sock = client_sock;
-		  ctx.numtxinblock = numtxinblock;
-		  ctx.difficulty = difficulty;
-		  job.context = ctx;
-		  pthread_mutex_lock(&job_lock);
-		  jobq.push(job);
-		  pthread_mutex_unlock(&job_lock);
-		  //pthread_cond_broadcast(&job_cond);
-		  rsockmap[client_sock] = "ready";
-		  
-		  //std::cerr << "Queued job" << std::endl;
-		}
-
-	      // debug only
-	      
-	      else if (FD_ISSET(client_sock, &readset))
-		std::cerr << "client_sock " << client_sock
-			  << " is SET but rsockmap already marked for it" << std::endl;
-	      
-	      
+	      worker_socket_update(&worker, client_sock, numtxinblock, difficulty);
 	      //std::cerr << "Releasing sockm lock..." << std::endl;
 	      pthread_mutex_unlock(&sockmap_lock);
 	    }
 	}
+
+
+      // Treat traffic from remotes (GETHASH or GETBLOCK requests only)
+      for (clientmap_t::iterator it = clientmap.begin();
+	   it != clientmap.end(); it++)
+	{
+	  int client_sock = it->second.client_sock;
+	  //std::cerr << "Acquiring sockm lock..." << std::endl;
+	  pthread_mutex_lock(&sockmap_lock);
+	  //std::cerr << "Acquired sockm lock..." << std::endl;
+	  worker_socket_update(NULL, client_sock, numtxinblock, difficulty);
+	  //std::cerr << "Releasing sockm lock..." << std::endl;
+	  pthread_mutex_unlock(&sockmap_lock);
+	}
+      
       
     }
 
 }
+
+
 
 // Create a new thread
 void		thread_create()
@@ -892,7 +931,8 @@ void*		thread_start(void *null)
 		    << next.context.sock << " from client list)" << std::endl;
 	  close(next.context.sock);
 	  FD_CLR(next.context.sock, &readset);
-	  next.context.worker->clients.remove(next.context.sock);
+	  if (next.context.worker)
+	    next.context.worker->clients.remove(next.context.sock);
 	}
 
       // This is only for SENDPORT - we close the socket after such request
@@ -902,7 +942,8 @@ void*		thread_start(void *null)
 		    << next.context.sock << std::endl;
 	  close(next.context.sock);
 	  FD_CLR(next.context.sock, &readset);
-	  next.context.worker->clients.remove(next.context.sock);
+	  if (next.context.worker)
+	    next.context.worker->clients.remove(next.context.sock);
 	}
       
       // Mark this socket as not waiting for more job
@@ -913,7 +954,7 @@ void*		thread_start(void *null)
       //std::cerr << "Released sockm lock..." << std::endl;
       pthread_mutex_unlock(&sockmap_lock);
 
-      std::cerr << "Done with job on sock " << next.context.sock << std::endl;      
+      //std::cerr << "Done with job on sock " << next.context.sock << std::endl;      
     }
 
   return (NULL);

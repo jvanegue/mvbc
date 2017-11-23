@@ -126,8 +126,8 @@ typedef enum	chain_state
 // This is a per-worker state machine data
 typedef struct		s_state
 {
-  blocklist_t		added;
-  blocklist_t		dropped;
+  blocklist_t		*added;
+  blocklist_t		*dropped;
   unsigned char		expected_height[32]; // We know we fully synced once we found this one
   unsigned char		working_height[32];  // Currently looking up at his height
   int			chain_state;
@@ -211,7 +211,7 @@ int		async_read(int fd, char *buff, int len, const char *errstr);
 void		worker_zero_state(worker_t& worker);
 
 // Transaction related functions
-int		trans_sync(blocklist_t added, blocklist_t removed, unsigned int numtxinblock);
+int		trans_sync(blocklist_t& added, blocklist_t& removed, unsigned int numtxinblock);
 bool		trans_exists(transmsg_t trans);
 int		trans_verify(worker_t *worker, transmsg_t trans, unsigned int numtxinblock, int difficulty);
 int		trans_exec(transdata_t *data, int numtxinblock, bool reverted);
