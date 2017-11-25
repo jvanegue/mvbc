@@ -227,6 +227,7 @@ bool		chain_accept_block(blockmsg_t msg, char *transdata, unsigned int numtxinbl
 bool		chain_sync(worker_t& worker, unsigned char expected_height[32]);
 bool		chain_store(blockmsg_t msg, char *transdata, unsigned int numtxinblock, int port);
 bool		chain_merge_simple(blockmsg_t msg, char *transdata, unsigned int numtxinblock, block_t& top, int port);
+bool		chain_push_block(blockmsg_t msg, char *transdata, unsigned int numtxinblock, block_t& top, int port);
 
 // State machine handlers
 bool	chain_gethash(worker_t *worker, int sock, unsigned int numtxinblock, int difficulty);

@@ -603,12 +603,12 @@ static int	client_update(worker_t *worker, int client_sock,
       ret = client_update_new(worker, client_sock, numtxinblock, difficulty);
       break;
     case CHAIN_WAITING_FOR_HASH:
-      std::cout << "client_update: UPDATE GETHASH state" << std::endl;
+      std::cerr << "client_update: UPDATE GETHASH state" << std::endl;
       res = chain_gethash(worker, client_sock, numtxinblock, difficulty);
       if (res) ret = 0;
       break;
     case CHAIN_WAITING_FOR_BLOCK:
-      std::cout << "client_update: UPDATE GETBLOCK state" << std::endl;
+      std::cerr << "client_update: UPDATE GETBLOCK state" << std::endl;
       res = chain_getblock(worker, client_sock, numtxinblock, difficulty);
       if (res) ret = 0;
       break;

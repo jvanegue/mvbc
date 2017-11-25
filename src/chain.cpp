@@ -13,6 +13,7 @@ extern pthread_mutex_t  transpool_lock;
 // Store new block in chain
 bool		chain_store(blockmsg_t msg, char *transdata, unsigned int numtxinblock, int port)
 {
+  
   //std::cerr << "Trying to acquire chain lock" << std::endl;
   pthread_mutex_lock(&chain_lock);
   //std::cerr << "Acquired chain lock" << std::endl;
@@ -27,9 +28,10 @@ bool		chain_store(blockmsg_t msg, char *transdata, unsigned int numtxinblock, in
     }
   else
     {
+      unsigned char incheight[32];
       block_t top = chain.top();
       blockmsg_t tophdr = top.hdr;
-
+      
       std::string msgstr = tag2str(msg.height);
       std::string topstr = tag2str(tophdr.height);
       std::string msgprior = hash2str(msg.priorhash);
@@ -45,23 +47,40 @@ bool		chain_store(blockmsg_t msg, char *transdata, unsigned int numtxinblock, in
 		<< " tophash     = " << tophash << std::endl
 		<< " topprior    = " << topprior << std::endl
 		<< std::endl;
+
       
-      if (memcmp(msg.height, tophdr.height, 32) == 0 &&
+      memcpy(incheight, tophdr.height, 32);
+      string_integer_increment((char *) incheight, 32);
+
+      // Just one block to push immediately on the chain
+      if (memcmp(incheight, msg.height, 32) == 0 &&
+	  memcmp(tophdr.hash, msg.priorhash, 32) == 0)
+	{
+	  std::cerr << "Entered ACCEPT_BLOCK with chain size = " << chain.size() << std::endl;	  
+	  chain_accept_block(msg, transdata, numtxinblock, port);
+	}
+      
+      // Kill current top and replace with new top
+      else if (memcmp(msg.height, tophdr.height, 32) == 0 &&
 	  memcmp(msg.priorhash, tophdr.priorhash, 32) == 0)
 	chain_merge_simple(msg, transdata, numtxinblock, top, port);
-      
+
+      // Disagree on ancestry, nuke top blocks until common ancestry found
       else if (memcmp(tophdr.height, msg.height, 32) == 0 &&
 	       memcmp(msg.priorhash, tophdr.priorhash, 32) != 0)
 	{
 	  std::cerr << "Entered MERGE_DEEP because priorhash not matching" << std::endl;	  
 	  chain_merge_deep(msg, transdata, numtxinblock, top, port);
 	}
+
+      // Larger delta - find ancestry
       else if (smaller_than(tophdr.height, msg.height))
 	{
 	  std::cerr << "Entered MERGE_DEEP because top block height is smaller" << std::endl;	  
 	  chain_merge_deep(msg, transdata, numtxinblock, top, port);
 	}
-    
+
+      // New block look old - propagate only 
       else if (smaller_than(msg.height, tophdr.height))
 	chain_propagate_only(msg, transdata, numtxinblock, port);
 
@@ -96,7 +115,8 @@ bool		worker_send_gethash(worker_t& worker, unsigned char next_height[32])
       
       int ret = async_send(sock, (char *) &msg, sizeof(msg), 0, false);
 
-      std::cerr << "Sent hashmsg on socket " << sock << " ret = " << ret << std::endl;
+      std::cerr << "Sent hashmsg requested height = " << tag2str(msg.height)
+		<< " on socket " << sock << " ret = " << ret << std::endl;
       
       worker.state.chain_state = CHAIN_WAITING_FOR_HASH;
       return (true);
@@ -164,7 +184,8 @@ bool			chain_gethash(worker_t *worker, int sock,
 	{
 	  std::cerr << "FOUND CHAIN SIZE = " << chain.size() << std::endl;
 	  string_integer_decrement((char *) worker->state.working_height, 32);
-	  std::cerr << "WARN: get_hash: Hash differed, now asking deeper hash" << std::endl;
+	  std::cerr << "WARN: get_hash: Hash differed, asking deeper hash at height "
+		    << hash2str(worker->state.working_height) << std::endl;
 	  return (worker_send_gethash(*worker, worker->state.working_height));
 	}
       
@@ -291,7 +312,6 @@ bool		chain_accept_block(blockmsg_t msg, char *transdata,
   blocklist_t	synced;
   blocklist_t	removed;
   blocklistpair_t bp;
-  bool		res;
 
   std::cerr << "Entered chain accept block" << std::endl;
   
@@ -317,27 +337,14 @@ bool		chain_accept_block(blockmsg_t msg, char *transdata,
       std::cerr << "Accepted block on the chain - no miner was currently running" << std::endl;
     }
 
-  // The block is height 0 and we have nothing on the chain: just push the block
-  if (chain.size() == 0 && is_zero(msg.height))
-    {
-      newtop.hdr = msg;
-      newtop.trans = (transdata_t *) transdata;
-      chain.push(newtop);
-      std::string height = tag2str(newtop.hdr.height);
-      bmap[height] = newtop;
-      synced.push_back(newtop);
-      bp = std::make_pair(synced, removed);
-      trans_sync(bp.first, bp.second, numtxinblock, false);
-      return (true);
-    }
-
-  // The block is not height 0 and we have nothing on the chain: get all ancestor blocks
-  res = chain_sync(workermap[port], msg.height);
-  if (res == false)
-    {
-      std::cerr << "Unable to request ancestor block : return false" << std::endl;
-      return (false);
-    }
+  newtop.hdr = msg;
+  newtop.trans = (transdata_t *) transdata;
+  chain.push(newtop);
+  std::string height = tag2str(newtop.hdr.height);
+  bmap[height] = newtop;
+  synced.push_back(newtop);
+  bp = std::make_pair(synced, removed);
+  trans_sync(bp.first, bp.second, numtxinblock, false);
   return (true);
 }
 
@@ -405,7 +412,6 @@ bool		chain_merge_simple(blockmsg_t msg, char *transdata,
 }
 
 
-
 // Merge block chain were divergence was more than one block
 bool			chain_merge_deep(blockmsg_t msg, char *transdata,
 					 unsigned int numtxinblock, block_t& top, int port)
@@ -427,6 +433,7 @@ bool			chain_merge_deep(blockmsg_t msg, char *transdata,
       pthread_mutex_unlock(&transpool_lock);
       thread_create();
     }
+  
 
   // There is no common ancestor - sync up with chain of sent block entirely
   bool ret = chain_sync(worker, msg.height);
