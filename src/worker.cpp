@@ -492,6 +492,11 @@ static int	client_update_new(worker_t *worker, int client_sock,
   else if (len != 1)
     FATAL("FAILED client update read");
 
+
+  std::string topheight;
+  std::string topprior;
+  std::string tophash;
+  
   switch (opcode)
     {
 
@@ -532,10 +537,21 @@ static int	client_update_new(worker_t *worker, int client_sock,
       height = tag2str((unsigned char *) blockheight);
       if (bmap.find(height) == bmap.end())
 	{
-	  std::cerr << "GETBLOCK: Did not find block at desired height" << std::endl;
+	  std::cerr << "GETBLOCK: Did not find block at desired height " << height << std::endl;
 	  return (0);
 	}
       blk = bmap[height];
+      
+      topheight = tag2str(blk.hdr.height);
+      topprior  = hash2str(blk.hdr.priorhash);
+      tophash   = hash2str(blk.hdr.hash);
+      
+      std::cerr << "OPCODE GETBLOCK with " << std::endl
+		<< " topheight   = " << topheight << std::endl
+		<< " tophash     = " << tophash << std::endl
+		<< " topprior    = " << topprior << std::endl
+		<< std::endl;
+      
       async_send(client_sock, (char *) &blk.hdr, sizeof(blk.hdr), "GETBLOCK send 1", false);
       async_send(client_sock, (char *) blk.trans, sizeof(transdata_t) * numtxinblock,
 		 "GETBLOCK send 2", false);
@@ -666,9 +682,11 @@ static void		worker_socket_update(worker_t* worker, int client_sock, int numtxin
     }
   
   // debug only
+  /*
   else if (FD_ISSET(client_sock, &writeset))
     std::cout << "client_sock " << client_sock
 	      << " is SET but wsockmap indicates no data to send" << std::endl;
+  */
   
   // Treat sockets for read
   // Dont create job if rsockmap is already market for that client
@@ -691,9 +709,11 @@ static void		worker_socket_update(worker_t* worker, int client_sock, int numtxin
     }
   
   // debug only
+  /*
   else if (FD_ISSET(client_sock, &readset))
     std::cerr << "client_sock " << client_sock
 	      << " is SET but rsockmap already marked for it" << std::endl;
+  */
 }
 
 

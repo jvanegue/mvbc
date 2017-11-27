@@ -48,7 +48,6 @@ bool		chain_store(blockmsg_t msg, char *transdata, unsigned int numtxinblock, in
 		<< " topprior    = " << topprior << std::endl
 		<< std::endl;
 
-      
       memcpy(incheight, tophdr.height, 32);
       string_integer_increment((char *) incheight, 32);
 
@@ -115,7 +114,7 @@ bool		worker_send_gethash(worker_t& worker, unsigned char next_height[32])
       
       int ret = async_send(sock, (char *) &msg, sizeof(msg), 0, false);
 
-      std::cerr << "Sent hashmsg requested height = " << tag2str(msg.height)
+      std::cerr << "worker_send_gethash request height = " << tag2str(msg.height)
 		<< " on socket " << sock << " ret = " << ret << std::endl;
       
       worker.state.chain_state = CHAIN_WAITING_FOR_HASH;
@@ -138,7 +137,12 @@ bool		worker_send_getblock(worker_t& worker, int sock)
       int sock = (*it);
       msg.hdr.opcode = OPCODE_GETBLOCK;
       memcpy(msg.height, worker.state.working_height, 32);
-      async_send(sock, (char *) &msg, sizeof(msg), 0, true);
+      
+      int ret = async_send(sock, (char *) &msg, sizeof(msg), 0, true);
+
+      std::cerr << "worker_send_getblock request height " << tag2str(msg.height)
+		<< " on socket " << sock << " ret = " << ret << std::endl;
+      
       worker.state.chain_state = CHAIN_WAITING_FOR_BLOCK;
       return (true);
     }
