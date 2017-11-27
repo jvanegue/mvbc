@@ -482,6 +482,8 @@ static int	client_update_new(worker_t *worker, int client_sock,
   blockmsg_t	block;
   char		*transdata = NULL;
   block_t	blk;
+  time_t	ltime;
+  char		*ts;
   
   int len = async_read(client_sock, (char *) &opcode, 1, "READ opcode in client update failed");
   if (len == 0)
@@ -514,7 +516,11 @@ static int	client_update_new(worker_t *worker, int client_sock,
 
       // Send block opcode
     case OPCODE_SENDBLOCK:
-      std::cerr << "SENDBLOCK OPCODE " << std::endl;
+
+      time(&ltime);
+      ts = ctime(&ltime);      
+      std::cerr << "[" << ts << "] SENDBLOCK OPCODE " << std::endl;
+      
       len = async_read(client_sock, (char *) &block, sizeof(block), "sendblock read (1)");
       if (len != (int) sizeof(block))
       	FATAL("Not enough bytes in SENDBLOCK message 1");
@@ -530,7 +536,11 @@ static int	client_update_new(worker_t *worker, int client_sock,
 
       // Get block opcode
     case OPCODE_GETBLOCK:
-      std::cerr << "GETBLOCK OPCODE " << std::endl;
+
+      time(&ltime);
+      ts = ctime(&ltime);      
+      std::cerr << "[" << ts << "] GETBLOCK OPCODE " << std::endl;
+      
       len = async_read(client_sock, blockheight, sizeof(blockheight), "GETBLOCK read failed");
       if (len != sizeof(blockheight))
 	FATAL("Not enough bytes in GETBLOCK message");
@@ -563,7 +573,11 @@ static int	client_update_new(worker_t *worker, int client_sock,
 
       // Get hash opcode
     case OPCODE_GETHASH:
-      std::cerr << "GETHASH OPCODE " << std::endl;
+
+      time(&ltime);
+      ts = ctime(&ltime);
+      std::cerr << "[" << ts << "] GETHASH OPCODE " << std::endl;
+      
       len = async_read(client_sock, blockheight, sizeof(blockheight), "GETHASH read failed");
       if (len != sizeof(blockheight))
 	FATAL("Not enough bytes in GETHASH message");
@@ -575,9 +589,7 @@ static int	client_update_new(worker_t *worker, int client_sock,
 	  return (0);
 	}
       blk = bmap[height];
-
-      std::cerr << "GETHASH SENDING: " << hash2str(blk.hdr.hash) << std::endl;
-      
+      std::cerr << "GETHASH SENDING: " << hash2str(blk.hdr.hash) << std::endl;      
       async_send(client_sock, (char *) blk.hdr.hash, 32, "GETHASH send", false);
       std::cerr << "GETHASH SENT ANSWER" << std::endl;
       return (0);

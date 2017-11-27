@@ -114,7 +114,8 @@ bool		worker_send_gethash(worker_t& worker, unsigned char next_height[32])
       
       int ret = async_send(sock, (char *) &msg, sizeof(msg), 0, false);
 
-      std::cerr << "worker_send_gethash request height = " << tag2str(msg.height)
+      std::cerr << "worker_send_gethash request  height = " << tag2str(msg.height) << std::endl
+		<< "                    expected height = " << tag2str(worker.state.expected_height) << std::endl
 		<< " on socket " << sock << " ret = " << ret << std::endl;
       
       worker.state.chain_state = CHAIN_WAITING_FOR_HASH;
@@ -162,22 +163,34 @@ bool			chain_gethash(worker_t *worker, int sock,
   int len = async_read(sock, (char *) &found_hash, 32, 0);
   if (len != 32)
     {
-      std::cerr << "Hash syncing failed in read" << std::endl;
+      std::cerr << "ERR: Hash syncing failed in read" << std::endl;
       return (false);
     }
 
   // We had an answer but the hash differed from what expected
-  block_t top = chain.top();
-  if (memcmp(found_hash, top.hdr.hash, 32) != 0)
+  //block_t top = chain.top();
+  block_t blk;
+  std::string hstr = tag2str(worker->state.working_height);
+  if (bmap.find(hstr) != bmap.end())
+  {
+    blk = bmap[hstr];
+  }
+  else
+    {
+      std::cerr << "ERR: Unable to find unblock at working height " << hstr << std::endl;
+      return (false);
+    }
+
+  if (memcmp(found_hash, blk.hdr.hash, 32) != 0)
     {
       std::cerr << "WARN: get_hash: Hash differed: received " << hash2str(found_hash)
-		<< " vs top: " << hash2str(top.hdr.hash) << std::endl;
+		<< " vs top: " << hash2str(blk.hdr.hash) << std::endl;
       
       chain.pop();
       if (worker->state.dropped == NULL)
 	worker->state.dropped = new std::list<block_t>();
-      worker->state.dropped->push_front(top);
-      bmap.erase(tag2str(top.hdr.height));
+      worker->state.dropped->push_front(blk);
+      bmap.erase(tag2str(blk.hdr.height));
       
       if (chain.size() == 0)
 	{
@@ -263,14 +276,15 @@ bool		chain_getblock(worker_t *worker, int sock,
   // If we are done, sync transactions
   if (memcmp(hdr.height, worker->state.expected_height, sizeof(hdr.height)) == 0)
     {
-      std::cerr << "Detected expected_height " << tag2str(hdr.height) << " syncing and returning OK" << std::endl;
+      std::cerr << "chain_getblock: Detected expected_height " << tag2str(hdr.height) << " syncing and returning OK" << std::endl;
       trans_sync(*worker->state.added, *worker->state.dropped, numtxinblock, true);
       worker_zero_state(*worker);
       return (true);
     }
   else
     {
-      std::cerr << "HDR height = " << tag2str(hdr.height) << " expected height " << tag2str(worker->state.expected_height) << std::endl;
+      std::cerr << "chain_getblock: HDR height = " << tag2str(hdr.height)
+		<< " expected height " << tag2str(worker->state.expected_height) << std::endl;
     }
 
   // Not done yet - ask for block at next height
