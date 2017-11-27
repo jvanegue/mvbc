@@ -70,6 +70,7 @@ int		trans_verify(worker_t *worker,
   //std::cerr << "Transaction has known receiver - continuing" << std::endl;    
   
   receiver = utxomap[mykey];
+
   if (smaller_than(sender.amount, trans.data.amount))
     {
       std::cerr << "Received transaction with bankrupt sender - ignoring" << std::endl;

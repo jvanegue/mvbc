@@ -189,7 +189,7 @@ bool			chain_gethash(worker_t *worker, int sock,
 	  std::cerr << "FOUND CHAIN SIZE = " << chain.size() << std::endl;
 	  string_integer_decrement((char *) worker->state.working_height, 32);
 	  std::cerr << "WARN: get_hash: Hash differed, asking deeper hash at height "
-		    << hash2str(worker->state.working_height) << std::endl;
+		    << tag2str(worker->state.working_height) << std::endl;
 	  return (worker_send_gethash(*worker, worker->state.working_height));
 	}
       
@@ -197,7 +197,7 @@ bool			chain_gethash(worker_t *worker, int sock,
 
   // We received an answer with the same hash as the expected
   std::cerr << "chain_gethash: Found ancestor block with MATCHING hash (height "
-	    << worker->state.working_height << ") NOW SEND GETBLOCK" << std::endl;
+	    << tag2str(worker->state.working_height) << ") NOW SEND GETBLOCK" << std::endl;
 
   // Now start getting block data starting with the bottom hash
   return (worker_send_getblock(*worker, sock));
@@ -255,9 +255,14 @@ bool		chain_getblock(worker_t *worker, int sock,
   // If we are done, sync transactions
   if (memcmp(hdr.height, worker->state.expected_height, sizeof(hdr.height)) == 0)
     {
+      std::cerr << "Detected expected_height " << tag2str(hdr.height) << " syncing and returning OK" << std::endl;
       trans_sync(*worker->state.added, *worker->state.dropped, numtxinblock, true);
       worker_zero_state(*worker);
       return (true);
+    }
+  else
+    {
+      std::cerr << "HDR height = " << tag2str(hdr.height) << " expected height " << tag2str(worker->state.expected_height) << std::endl;
     }
 
   // Not done yet - ask for block at next height
@@ -485,7 +490,7 @@ bool	chain_propagate_only(blockmsg_t msg, char *transdata,
 	  char opcode = OPCODE_SENDTRANS;
 	  async_send(remote.client_sock, &opcode, 1, "Propagate opcode on remote", false);
 	  async_send(remote.client_sock, (char *) curdata,
-		     sizeof(transmsg_t), "Propagate transaction on remote", false);
+		     sizeof(transdata_t), "Propagate transaction on remote", false);
 	  
 	  //std::cerr << "Propagated trans to remote port " << remote.remote_port << std::endl;
 	}
