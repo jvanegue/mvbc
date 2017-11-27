@@ -296,6 +296,7 @@ int	async_read(int fd, char *buff, int len, const char *errstr)
   //if (rd < 0 && (errno == EGAIN || errno == EWOULDBLOCK)
   if (rd == 0 && errno != EWOULDBLOCK && errno != EAGAIN && errno != EINTR)
     {
+      //goto retry;
       perror("async_read 0 bytes error");
       return (0);
     }

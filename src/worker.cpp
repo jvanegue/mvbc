@@ -551,8 +551,10 @@ static int	client_update_new(worker_t *worker, int client_sock,
 		<< " tophash     = " << tophash << std::endl
 		<< " topprior    = " << topprior << std::endl
 		<< std::endl;
-      
-      async_send(client_sock, (char *) &blk.hdr, sizeof(blk.hdr), "GETBLOCK send 1", false);
+
+      opcode = OPCODE_SENDBLOCK;
+      async_send(client_sock, (char *) &opcode, 1, "GETBLOCK send 1", false);
+      async_send(client_sock, (char *) &blk.hdr, sizeof(blk.hdr), "GETBLOCK send 2", false);
       async_send(client_sock, (char *) blk.trans, sizeof(transdata_t) * numtxinblock,
 		 "GETBLOCK send 2", false);
       std::cerr << "GETBLOCK SENT ANSWER" << std::endl;

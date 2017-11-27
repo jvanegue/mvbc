@@ -210,11 +210,19 @@ bool		chain_getblock(worker_t *worker, int sock,
 {
   blockmsg_t	hdr;
   block_t	block;
-  
-  int len = async_read(sock, (char *) &hdr, sizeof(hdr), 0);
-  if (len != sizeof(hdr))
+  unsigned char opcode;
+
+  int len = async_read(sock, (char *) &opcode, 1, 0);
+  if (len != 1)
     {
       std::cerr << "Block syncing failed in read 1" << std::endl;
+      // XXX: should restore all dropped block here
+      return (false);
+    }
+  len = async_read(sock, (char *) &hdr, sizeof(hdr), 0);
+  if (len != sizeof(hdr))
+    {
+      std::cerr << "Block syncing failed in read 2" << std::endl;
       // XXX: should restore all dropped block here
       return (false);
     }
