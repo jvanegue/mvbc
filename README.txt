@@ -26,5 +26,12 @@ Default number of transactions per block is 50000.
 
 See node.h for details of distributed protocol, data structures and API.
 
+WARNING: This is a TOY project, with NO SECURITY. Do not attempt anything remotely
+serious with this code.
+
+NOTE: Client code is NOT provided.
+
+Thanks to Hakim Weatherspoon @ CS 6410 for inspiring this.
+
 
 
